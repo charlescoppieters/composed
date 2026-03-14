@@ -96,7 +96,6 @@ class FolderConventionTests(unittest.TestCase):
         self.assertEqual(layout["libraryRoot"], "samples/library")
         self.assertEqual(layout["generatedRoot"], "samples/generated")
         self.assertEqual(layout["indexRoot"], "samples/_index")
-        self.assertIn("samples/_templates", layout["templateRoots"])
 
 
 if __name__ == "__main__":

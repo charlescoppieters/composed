@@ -147,6 +147,5 @@ def sample_library_layout():
         "libraryRoot": "samples/library",
         "generatedRoot": "samples/generated",
         "indexRoot": "samples/_index",
-        "templateRoots": ["samples/_templates"],
         "notes": "Use JSON sidecars as source of truth and JSONL under samples/_index.",
     }

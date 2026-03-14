@@ -47,7 +47,7 @@ User query → GPT-5.4 (OpenAI Agents SDK) → @function_tool calls → CLI comm
 
 ## Sample Library
 
-299 samples from 3 Cymatics packs (Orchid, Venom, Infinity). Organized by category:
+299 samples from the Cymatics Venom pack. Organized by category:
 
 - **Percussion (63):** kick, snare, clap, hat, perc, crash, ride, rimshot, shaker, snap
 - **Bass (15):** 808, bass
@@ -73,8 +73,6 @@ python3 -m sample_agent.cli search --catalog samples/_index/catalog.jsonl --quer
 # Add feedback
 python3 -m sample_agent.cli feedback --samples-root samples --sample-id kick-001 --note "Great" --tags "favorite"
 
-# Ingest a new sample pack zip
-python3 -c "from sample_agent.ingest import ingest_pack; ingest_pack('/path/to/Pack.zip')"
 ```
 
 ## Conventions

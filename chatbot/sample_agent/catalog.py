@@ -34,14 +34,23 @@ def build_catalog(samples_root, output_path, include_generated=False):
     samples_root = Path(samples_root)
     output_path = Path(output_path)
     rows = []
+    skipped = []
     for sidecar_path in samples_root.rglob("*.json"):
         relative_parts = sidecar_path.relative_to(samples_root).parts
-        if relative_parts[0] in {"_index", "_templates"}:
+        if relative_parts[0] == "_index":
             continue
-        row = load_sidecar(sidecar_path)
+        try:
+            row = load_sidecar(sidecar_path)
+        except (ValueError, json.JSONDecodeError) as exc:
+            skipped.append((sidecar_path, str(exc)))
+            continue
         if not include_generated and row.get("sourceType") != "local":
             continue
         rows.append(row)
+    if skipped:
+        import sys
+        for path, reason in skipped:
+            print(f"warning: skipped {path}: {reason}", file=sys.stderr)
 
     rows.sort(key=lambda row: row["id"])
     output_path.parent.mkdir(parents=True, exist_ok=True)

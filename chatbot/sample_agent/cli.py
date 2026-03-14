@@ -21,7 +21,10 @@ def _find_sidecar_by_sample_id(samples_root, sample_id):
     for path in samples_root.rglob("*.json"):
         if path.name == "catalog.jsonl":
             continue
-        metadata = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            metadata = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
         if metadata.get("id") == sample_id:
             return path
     raise FileNotFoundError(f"No sidecar found for sample id {sample_id}")

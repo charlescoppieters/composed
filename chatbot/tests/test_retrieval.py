@@ -68,7 +68,8 @@ class RetrievalTests(unittest.TestCase):
         )
 
         self.assertEqual(results[0]["id"], "snare-002")
-        self.assertEqual(results[1]["id"], "snare-001")
+        # Reference sample should be excluded from results
+        self.assertNotIn("snare-001", [r["id"] for r in results])
 
     def test_apply_feedback_merges_note_and_tags(self):
         updated = apply_feedback(

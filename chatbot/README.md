@@ -8,15 +8,14 @@ This repository implements a metadata-first, agent-driven workflow for finding l
 - A JSONL catalog builder for sidecar metadata.
 - A local search and reranking helper for natural-language queries.
 - A feedback command that writes notes and tags back to sample sidecars.
-- A Claude prompt file for running the retrieval workflow consistently.
+- An OpenAI Agents SDK agent with a system prompt for retrieval.
 
 ## Directory layout
 
 - `samples/library/` stores local audio assets and JSON sidecars.
 - `samples/_index/` stores generated search artifacts like `catalog.jsonl`.
 - `samples/generated/` is reserved for future AI-generated outputs.
-- `samples/_templates/` stores the sidecar template.
-- `prompts/` stores the Claude retrieval prompt.
+- `prompts/` stores the agent system prompt.
 - `docs/` stores taxonomy and future integration notes.
 
 ## Commands
@@ -40,7 +39,6 @@ Search relative to a reference sample:
 ```bash
 python3 -m sample_agent.cli search --catalog samples/_index/catalog.jsonl --query "something like this but brighter and more roomy" --reference-sample-id snare-001
 ```
-I w
 Write user feedback back to the chosen sample:
 
 ```bash

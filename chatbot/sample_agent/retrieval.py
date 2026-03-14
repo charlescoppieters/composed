@@ -100,9 +100,7 @@ def search_catalog(entries, query, limit=5, reference_sample_id=None):
 
         if reference_entry:
             if entry["id"] == reference_entry["id"]:
-                score += 3
-                if {"more", "less", "but", "than"} & set(query.lower().split()):
-                    score -= 5
+                continue
             if entry.get("category") == reference_entry.get("category"):
                 score += 4
 
