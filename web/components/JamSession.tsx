@@ -6,7 +6,6 @@ import { ListenMode } from "@/lib/audio-engine";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { STEM_COLORS } from "@/lib/constants";
 import { Track } from "@/lib/types";
-import MasterControls from "./MasterControls";
 import TrackList from "./TrackList";
 import CreationPanel from "./CreationPanel";
 
@@ -76,10 +75,13 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             {room.users.length} online
           </p>
         </div>
-        <MasterControls
-          settings={room.settings}
-          onUpdateSettings={updateSettings}
-        />
+        <div className="flex items-center gap-3 text-sm text-gray-400">
+          <span className="font-mono text-white">{room.settings.bpm} BPM</span>
+          <span>·</span>
+          <span>{room.settings.key} {room.settings.scale}</span>
+          <span>·</span>
+          <span>{room.settings.barCount} bars</span>
+        </div>
       </header>
 
       <div className="flex-1 flex">
