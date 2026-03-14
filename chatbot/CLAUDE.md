@@ -30,10 +30,11 @@ User query → GPT-5.4 (OpenAI Agents SDK) → @function_tool calls → CLI comm
 | `sample_agent/retrieval.py` | Token-based search + scoring over catalog |
 | `sample_agent/catalog.py` | Builds JSONL catalog from JSON sidecars |
 | `sample_agent/cli.py` | CLI: `build-catalog`, `search`, `feedback` |
-| `sample_agent/ingest.py` | Cymatics pack ingestion (unzip → categorize → sidecar) |
+| `sample_agent/ingest.py` | Sample pack ingestion (unzip → categorize → sidecar) |
 | `prompts/sample-retrieval.md` | System prompt with vibe table + taxonomy |
-| `samples/_index/catalog.jsonl` | Search index (299 rows) |
-| `samples/library/{category}/` | Audio files + JSON sidecars |
+| `samples/_index/catalog.jsonl` | Search index (derived — rebuild with `build-catalog`) |
+| `samples/library/{category}/` | Audio files + JSON sidecars (source of truth) |
+| `samples/generated/` | Reserved for AI-generated audio (ElevenLabs) |
 
 ### Agent Tools
 
@@ -72,8 +73,8 @@ python3 -m sample_agent.cli search --catalog samples/_index/catalog.jsonl --quer
 # Add feedback
 python3 -m sample_agent.cli feedback --samples-root samples --sample-id kick-001 --note "Great" --tags "favorite"
 
-# Ingest new Cymatics packs
-python3 -c "from sample_agent.ingest import ingest_pack; ingest_pack('tracks/NewPack.zip')"
+# Ingest a new sample pack zip
+python3 -c "from sample_agent.ingest import ingest_pack; ingest_pack('/path/to/Pack.zip')"
 ```
 
 ## Conventions
