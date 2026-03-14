@@ -1,15 +1,23 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRoom } from "@/hooks/useRoom";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
+import { ListenMode } from "@/lib/audio-engine";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
+import { STEM_COLORS } from "@/lib/constants";
+import { Track } from "@/lib/types";
 import MasterControls from "./MasterControls";
 import TrackList from "./TrackList";
-import ListenModeToggle from "./ListenModeToggle";
 import CreationPanel from "./CreationPanel";
 
+const LISTEN_MODES: { value: ListenMode; label: string }[] = [
+  { value: "solo", label: "My Track" },
+  { value: "master", label: "Master" },
+  { value: "overlay", label: "Both" },
+];
+
 export default function JamSession({ roomCode }: { roomCode: string }) {
-  const { room, userId, createRoom, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
+  const { room, userId, trackQueue, createRoom, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
   const joinedRef = useRef(false);
 
   useEffect(() => {
@@ -33,16 +41,21 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
       window.history.replaceState(null, "", `/room/${room.code}`);
     }
   }, [room, roomCode]);
+
   const {
-    isPlaying,
     listenMode,
-    startTransport,
-    stopTransport,
     setListenMode,
-    previewLocal,
-    clearLocal,
-    setTrackVolume,
-  } = useAudioEngine(room?.settings ?? null, room?.tracks ?? []);
+    getLocalDestination,
+  } = useAudioEngine(room, room?.tracks ?? []);
+
+  const [localDest, setLocalDest] = useState<any>(null);
+
+  // Get the local destination once audio engine is initialized
+  useEffect(() => {
+    if (room && !localDest) {
+      setLocalDest(getLocalDestination());
+    }
+  }, [room, localDest, getLocalDestination]);
 
   if (!room) {
     return (
@@ -65,9 +78,6 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
         </div>
         <MasterControls
           settings={room.settings}
-          isPlaying={isPlaying}
-          onStart={startTransport}
-          onStop={stopTransport}
           onUpdateSettings={updateSettings}
         />
       </header>
@@ -83,23 +93,66 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             userId={userId}
             onVoteRemove={voteRemove}
             onUnvoteRemove={unvoteRemove}
-            onVolumeChange={setTrackVolume}
             totalUsers={room.users.length}
           />
+
+          {trackQueue.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-gray-400">Queue</h2>
+                <span className="text-gray-600 text-sm">{trackQueue.length} pending</span>
+              </div>
+              <div className="space-y-2">
+                {trackQueue.map((track: Track, i: number) => (
+                  <div
+                    key={track.id}
+                    className="bg-gray-900/50 border border-gray-800 rounded-lg p-3 opacity-60"
+                    style={{ borderLeftColor: STEM_COLORS[track.stemType], borderLeftWidth: 3 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm">{track.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {track.userName} · {track.stemType}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-600 font-mono">#{i + 1}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 p-6 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <ListenModeToggle mode={listenMode} onChange={setListenMode} />
+          {/* Listen mode toggle */}
+          <div className="flex items-center gap-1 mb-6">
+            <span className="text-gray-400 text-sm mr-2">Listen:</span>
+            {LISTEN_MODES.map((mode) => (
+              <button
+                key={mode.value}
+                onClick={() => setListenMode(mode.value)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition
+                  ${listenMode === mode.value
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+              >
+                {mode.label}
+              </button>
+            ))}
           </div>
-          <CreationPanel
-            settings={room.settings}
-            userId={userId}
-            roomCode={room.code}
-            onPreview={previewLocal}
-            onClearPreview={clearLocal}
-            onPush={pushTrack}
-          />
+
+          {localDest && (
+            <CreationPanel
+              settings={room.settings}
+              userId={userId}
+              roomCode={room.code}
+              localDestination={localDest}
+              onPush={pushTrack}
+            />
+          )}
         </div>
       </div>
     </div>

@@ -13,8 +13,9 @@ class AudioEngine {
   private listenMode: ListenMode = "overlay";
   private masterGain: Tone.Gain | null = null;
   private localGain: Tone.Gain | null = null;
-  private _isPlaying = false;
   private _initialized = false;
+  private clockStartTime = 0;
+  private clockOffset = 0;
 
   private ensureGains() {
     if (!this.masterGain) {
@@ -32,7 +33,7 @@ class AudioEngine {
   }
 
   get isPlaying() {
-    return this._isPlaying;
+    return Tone.getTransport().state === "started";
   }
 
   setBpm(bpm: number) {
@@ -44,14 +45,53 @@ class AudioEngine {
     Tone.getTransport().loop = true;
   }
 
-  start() {
-    Tone.getTransport().start();
-    this._isPlaying = true;
+  syncToClock(clockStartTime: number, clockOffset: number, bpm: number, barCount: number) {
+    this.clockStartTime = clockStartTime;
+    this.clockOffset = clockOffset;
+
+    const transport = Tone.getTransport();
+    transport.bpm.value = bpm;
+    transport.loopEnd = `${barCount}m`;
+    transport.loop = true;
+
+    const loopDurationSec = (barCount * 4 * 60) / bpm;
+
+    // serverNow = Date.now() + clockOffset (offset = server - client)
+    const serverNowMs = Date.now() + clockOffset;
+    const elapsedSec = (serverNowMs - clockStartTime) / 1000;
+    const positionSec = ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec;
+
+    console.log("[CLOCK SYNC]", {
+      clockOffset: Math.round(clockOffset * 100) / 100,
+      serverNowMs,
+      clockStartTime,
+      elapsedSec: Math.round(elapsedSec * 1000) / 1000,
+      positionSec: Math.round(positionSec * 1000) / 1000,
+      loopDurationSec,
+    });
+
+    if (transport.state === "started") {
+      transport.stop();
+    }
+    // Set position directly then start — simplest possible approach
+    transport.seconds = positionSec;
+    transport.start();
   }
 
-  stop() {
-    Tone.getTransport().stop();
-    this._isPlaying = false;
+  recalibrate(clockOffset: number, bpm: number, barCount: number) {
+    const transport = Tone.getTransport();
+    const loopDurationSec = (barCount * 4 * 60) / bpm;
+
+    const serverNowMs = Date.now() + clockOffset;
+    const elapsedSec = (serverNowMs - this.clockStartTime) / 1000;
+    const expectedSec = ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec;
+    const currentSec = ((transport.seconds % loopDurationSec) + loopDurationSec) % loopDurationSec;
+
+    const driftMs = Math.abs(expectedSec - currentSec) * 1000;
+    console.log("[CLOCK DRIFT]", { driftMs: Math.round(driftMs), expectedSec: Math.round(expectedSec * 1000) / 1000, currentSec: Math.round(currentSec * 1000) / 1000 });
+    if (driftMs > 20) {
+      this.syncToClock(this.clockStartTime, clockOffset, bpm, barCount);
+    }
   }
 
   setListenMode(mode: ListenMode) {
@@ -114,6 +154,11 @@ class AudioEngine {
     if (tp) tp.gain.gain.value = muted ? 0 : 1;
   }
 
+  getLocalDestination(): Tone.Gain {
+    this.ensureGains();
+    return this.localGain!;
+  }
+
   async setLocalTrack(audioUrl: string) {
     this.clearLocalTrack();
     this.ensureGains();
@@ -144,7 +189,7 @@ class AudioEngine {
   }
 
   dispose() {
-    this.stop();
+    Tone.getTransport().stop();
     this.masterPlayers.forEach((tp) => {
       tp.player.unsync().stop().dispose();
       tp.gain.dispose();

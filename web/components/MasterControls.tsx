@@ -4,23 +4,12 @@ import { MUSICAL_KEYS, SCALES, BAR_COUNTS } from "@/lib/constants";
 
 interface Props {
   settings: RoomSettings;
-  isPlaying: boolean;
-  onStart: () => void;
-  onStop: () => void;
   onUpdateSettings: (s: Partial<RoomSettings>) => void;
 }
 
-export default function MasterControls({ settings, isPlaying, onStart, onStop, onUpdateSettings }: Props) {
+export default function MasterControls({ settings, onUpdateSettings }: Props) {
   return (
     <div className="flex items-center gap-4">
-      <button
-        onClick={isPlaying ? onStop : onStart}
-        className={`px-6 py-2 rounded-lg font-semibold transition
-          ${isPlaying ? "bg-red-600 hover:bg-red-500" : "bg-green-600 hover:bg-green-500"}`}
-      >
-        {isPlaying ? "Stop" : "Play"}
-      </button>
-
       <div className="flex items-center gap-2 text-sm">
         <span className="text-gray-400">BPM</span>
         <input

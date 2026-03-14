@@ -6,6 +6,7 @@ import { getSocket } from "@/lib/socket";
 export function useRoom() {
   const [room, setRoom] = useState<Room | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [trackQueue, setTrackQueue] = useState<Track[]>([]);
   const socket = getSocket();
 
   useEffect(() => {
@@ -43,6 +44,10 @@ export function useRoom() {
       );
     });
 
+    socket.on("queue:updated", (queue: Track[]) => {
+      setTrackQueue(queue);
+    });
+
     socket.on("track:vote-updated", (trackId: string, votes: string[]) => {
       setRoom((prev) =>
         prev
@@ -63,6 +68,7 @@ export function useRoom() {
       socket.off("room:settings-changed");
       socket.off("track:pushed");
       socket.off("track:removed");
+      socket.off("queue:updated");
       socket.off("track:vote-updated");
     };
   }, [socket]);
@@ -127,6 +133,7 @@ export function useRoom() {
   return {
     room,
     userId,
+    trackQueue,
     createRoom,
     joinRoom,
     updateSettings,

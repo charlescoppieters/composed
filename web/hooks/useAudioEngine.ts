@@ -1,21 +1,81 @@
 "use client";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getAudioEngine, ListenMode } from "@/lib/audio-engine";
-import { Track, RoomSettings } from "@/lib/types";
+import { Track, RoomSettings, Room } from "@/lib/types";
+import { getSocket } from "@/lib/socket";
 
-export function useAudioEngine(settings: RoomSettings | null, tracks: Track[]) {
+async function calibrateClock(rounds = 10): Promise<number> {
+  const socket = getSocket();
+  const samples: { offset: number; rtt: number }[] = [];
+
+  for (let i = 0; i < rounds; i++) {
+    const sample = await new Promise<{ offset: number; rtt: number }>((resolve) => {
+      // Use Date.now() for the ping since the server uses Date.now()
+      const clientTime = Date.now();
+      socket.emit("clock:ping", clientTime, (serverTime: number) => {
+        const rtt = Date.now() - clientTime;
+        // offset = how far server clock is ahead of client clock
+        // serverTime = clientTime + offset  =>  offset = serverTime - clientTime - rtt/2
+        resolve({ offset: serverTime - clientTime - rtt / 2, rtt });
+      });
+    });
+    samples.push(sample);
+    // Small delay between pings to avoid burst congestion
+    await new Promise((r) => setTimeout(r, 20));
+  }
+
+  // Sort by RTT — lowest RTT = most symmetric = most accurate
+  samples.sort((a, b) => a.rtt - b.rtt);
+  // Take the best 40% (most accurate samples)
+  const bestCount = Math.max(3, Math.ceil(samples.length * 0.4));
+  const best = samples.slice(0, bestCount);
+  return best.reduce((sum, s) => sum + s.offset, 0) / best.length;
+}
+
+export function useAudioEngine(room: Room | null, tracks: Track[]) {
   const engineRef = useRef(getAudioEngine());
-  const [isPlaying, setIsPlaying] = useState(false);
   const [listenMode, setListenModeState] = useState<ListenMode>("overlay");
   const prevTrackIdsRef = useRef<Set<string>>(new Set());
+  const clockOffsetRef = useRef(0);
+  const calibrationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncedRef = useRef(false);
 
+  // Clock calibration and sync on room join
   useEffect(() => {
-    if (!settings) return;
-    const engine = engineRef.current;
-    engine.setBpm(settings.bpm);
-    engine.setBarCount(settings.barCount);
-  }, [settings?.bpm, settings?.barCount]);
+    if (!room || syncedRef.current) return;
+    syncedRef.current = true;
 
+    const engine = engineRef.current;
+
+    (async () => {
+      await engine.init();
+      const offset = await calibrateClock(10);
+      clockOffsetRef.current = offset;
+      engine.syncToClock(room.clockStartTime, offset, room.settings.bpm, room.settings.barCount);
+
+      // Recalibrate every 30s
+      calibrationIntervalRef.current = setInterval(async () => {
+        const newOffset = await calibrateClock(3);
+        clockOffsetRef.current = newOffset;
+        engine.recalibrate(newOffset, room.settings.bpm, room.settings.barCount);
+      }, 30000);
+    })();
+
+    return () => {
+      if (calibrationIntervalRef.current) {
+        clearInterval(calibrationIntervalRef.current);
+      }
+    };
+  }, [room]);
+
+  // Sync settings changes (BPM, barCount)
+  useEffect(() => {
+    if (!room || !syncedRef.current) return;
+    const engine = engineRef.current;
+    engine.syncToClock(room.clockStartTime, clockOffsetRef.current, room.settings.bpm, room.settings.barCount);
+  }, [room?.settings.bpm, room?.settings.barCount]);
+
+  // Track management
   useEffect(() => {
     const engine = engineRef.current;
     const currentIds = new Set(tracks.map((t) => t.id));
@@ -35,18 +95,6 @@ export function useAudioEngine(settings: RoomSettings | null, tracks: Track[]) {
 
     prevTrackIdsRef.current = currentIds;
   }, [tracks]);
-
-  const startTransport = useCallback(async () => {
-    const engine = engineRef.current;
-    await engine.init();
-    engine.start();
-    setIsPlaying(true);
-  }, []);
-
-  const stopTransport = useCallback(() => {
-    engineRef.current.stop();
-    setIsPlaying(false);
-  }, []);
 
   const setListenMode = useCallback((mode: ListenMode) => {
     engineRef.current.setListenMode(mode);
@@ -71,14 +119,17 @@ export function useAudioEngine(settings: RoomSettings | null, tracks: Track[]) {
     };
   }, []);
 
+  const getLocalDestination = useCallback(() => {
+    return engineRef.current.getLocalDestination();
+  }, []);
+
   return {
-    isPlaying,
+    isPlaying: syncedRef.current,
     listenMode,
-    startTransport,
-    stopTransport,
     setListenMode,
     previewLocal,
     clearLocal,
     setTrackVolume,
+    getLocalDestination,
   };
 }

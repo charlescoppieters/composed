@@ -7,7 +7,6 @@ interface Props {
   userId: string | null;
   onVoteRemove: (trackId: string) => void;
   onUnvoteRemove: (trackId: string) => void;
-  onVolumeChange: (trackId: string, volume: number) => void;
   totalUsers: number;
 }
 
@@ -16,7 +15,6 @@ export default function TrackCard({
   userId,
   onVoteRemove,
   onUnvoteRemove,
-  onVolumeChange,
   totalUsers,
 }: Props) {
   const hasVoted = userId ? track.removeVotes.includes(userId) : false;
@@ -43,16 +41,6 @@ export default function TrackCard({
           {voteCount}/{votesNeeded} skip
         </button>
       </div>
-
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        defaultValue={track.volume}
-        onChange={(e) => onVolumeChange(track.id, Number(e.target.value))}
-        className="w-full h-1 accent-purple-500"
-      />
     </div>
   );
 }

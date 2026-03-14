@@ -7,7 +7,6 @@ interface Props {
   userId: string | null;
   onVoteRemove: (trackId: string) => void;
   onUnvoteRemove: (trackId: string) => void;
-  onVolumeChange: (trackId: string, volume: number) => void;
   totalUsers: number;
 }
 
@@ -16,7 +15,6 @@ export default function TrackList({
   userId,
   onVoteRemove,
   onUnvoteRemove,
-  onVolumeChange,
   totalUsers,
 }: Props) {
   if (tracks.length === 0) {
@@ -36,7 +34,6 @@ export default function TrackList({
           userId={userId}
           onVoteRemove={onVoteRemove}
           onUnvoteRemove={onUnvoteRemove}
-          onVolumeChange={onVolumeChange}
           totalUsers={totalUsers}
         />
       ))}

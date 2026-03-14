@@ -2,6 +2,7 @@ import { Room, RoomSettings, RoomUser, Track } from "../../shared/types";
 import { v4 as uuid } from "uuid";
 
 const rooms = new Map<string, Room>();
+const queueTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -13,12 +14,15 @@ function generateCode(): string {
 }
 
 export function createRoom(settings: RoomSettings): Room {
+  const now = Date.now();
   const room: Room = {
     code: generateCode(),
     settings,
     tracks: [],
+    trackQueue: [],
     users: [],
-    createdAt: Date.now(),
+    createdAt: now,
+    clockStartTime: now,
   };
   rooms.set(room.code, room);
   return room;
@@ -42,7 +46,10 @@ export function removeUser(code: string, userId: string): void {
   if (room.users.length === 0) {
     setTimeout(() => {
       const r = rooms.get(code);
-      if (r && r.users.length === 0) rooms.delete(code);
+      if (r && r.users.length === 0) {
+        clearQueueTimer(code);
+        rooms.delete(code);
+      }
     }, 60000);
   }
 }
@@ -59,6 +66,46 @@ export function pushTrack(code: string, track: Track): Track | undefined {
   if (!room) return undefined;
   room.tracks.push(track);
   return track;
+}
+
+export function enqueueTrack(code: string, track: Track): Track | undefined {
+  const room = rooms.get(code);
+  if (!room) return undefined;
+  room.trackQueue.push(track);
+  return track;
+}
+
+export function dequeueTrack(code: string): Track | undefined {
+  const room = rooms.get(code);
+  if (!room || room.trackQueue.length === 0) return undefined;
+  const track = room.trackQueue.shift()!;
+  room.tracks.push(track);
+  return track;
+}
+
+export function getNextCycleBoundaryMs(code: string): number | undefined {
+  const room = rooms.get(code);
+  if (!room) return undefined;
+  const { bpm, barCount } = room.settings;
+  const loopDurationMs = (barCount * 4 * 60 * 1000) / bpm;
+  const elapsed = Date.now() - room.clockStartTime;
+  return room.clockStartTime + (Math.floor(elapsed / loopDurationMs) + 1) * loopDurationMs;
+}
+
+export function getQueueTimer(code: string): ReturnType<typeof setTimeout> | undefined {
+  return queueTimers.get(code);
+}
+
+export function setQueueTimer(code: string, timer: ReturnType<typeof setTimeout>): void {
+  queueTimers.set(code, timer);
+}
+
+export function clearQueueTimer(code: string): void {
+  const timer = queueTimers.get(code);
+  if (timer) {
+    clearTimeout(timer);
+    queueTimers.delete(code);
+  }
 }
 
 export function removeTrack(code: string, trackId: string): boolean {

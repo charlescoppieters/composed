@@ -31,8 +31,10 @@ export interface Room {
   code: string;
   settings: RoomSettings;
   tracks: Track[];
+  trackQueue: Track[];
   users: RoomUser[];
   createdAt: number;
+  clockStartTime: number;  // shared epoch for transport sync
 }
 
 export interface RoomUser {
@@ -61,6 +63,7 @@ export interface ServerToClientEvents {
   "track:pushed": (track: Track) => void;
   "track:removed": (trackId: string) => void;
   "track:vote-updated": (trackId: string, votes: string[]) => void;
+  "queue:updated": (queue: Track[]) => void;
   "transport:sync": (position: number) => void;
 }
 
@@ -71,4 +74,5 @@ export interface ClientToServerEvents {
   "track:push": (track: Omit<Track, "removeVotes" | "pushedAt">) => void;
   "track:vote-remove": (trackId: string) => void;
   "track:unvote-remove": (trackId: string) => void;
+  "clock:ping": (clientTime: number, cb: (serverTime: number) => void) => void;
 }

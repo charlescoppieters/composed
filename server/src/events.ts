@@ -9,8 +9,35 @@ import * as RoomManager from "./room-manager";
 import { v4 as uuid } from "uuid";
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+type AppServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
 const socketRooms = new Map<string, { code: string; userId: string }>();
+
+function scheduleNextDequeue(io: AppServer, code: string): void {
+  const boundary = RoomManager.getNextCycleBoundaryMs(code);
+  if (boundary === undefined) return;
+  const room = RoomManager.getRoom(code);
+  if (!room || room.trackQueue.length === 0) {
+    RoomManager.clearQueueTimer(code);
+    return;
+  }
+  const delay = Math.max(0, boundary - Date.now());
+  const timer = setTimeout(() => {
+    const track = RoomManager.dequeueTrack(code);
+    if (track) {
+      io.to(code).emit("track:pushed", track);
+    }
+    const updatedRoom = RoomManager.getRoom(code);
+    if (updatedRoom) {
+      io.to(code).emit("queue:updated", updatedRoom.trackQueue);
+    }
+    RoomManager.clearQueueTimer(code);
+    if (updatedRoom && updatedRoom.trackQueue.length > 0) {
+      scheduleNextDequeue(io, code);
+    }
+  }, delay);
+  RoomManager.setQueueTimer(code, timer);
+}
 
 export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEvents>) {
   io.on("connection", (socket: AppSocket) => {
@@ -46,6 +73,14 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
       const updated = RoomManager.updateSettings(meta.code, settings);
       if (updated) {
         io.to(meta.code).emit("room:settings-changed", updated);
+        // Reschedule queue timer if BPM or barCount changed
+        if (settings.bpm !== undefined || settings.barCount !== undefined) {
+          const room = RoomManager.getRoom(meta.code);
+          if (room && room.trackQueue.length > 0) {
+            RoomManager.clearQueueTimer(meta.code);
+            scheduleNextDequeue(io, meta.code);
+          }
+        }
       }
     });
 
@@ -57,8 +92,14 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
         removeVotes: [],
         pushedAt: Date.now(),
       };
-      RoomManager.pushTrack(meta.code, track);
-      io.to(meta.code).emit("track:pushed", track);
+      RoomManager.enqueueTrack(meta.code, track);
+      const room = RoomManager.getRoom(meta.code);
+      if (room) {
+        io.to(meta.code).emit("queue:updated", room.trackQueue);
+      }
+      if (!RoomManager.getQueueTimer(meta.code)) {
+        scheduleNextDequeue(io, meta.code);
+      }
     });
 
     socket.on("track:vote-remove", (trackId) => {
@@ -79,6 +120,10 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
       if (result) {
         io.to(meta.code).emit("track:vote-updated", trackId, result);
       }
+    });
+
+    socket.on("clock:ping", (_clientTime, cb) => {
+      cb(Date.now());
     });
 
     socket.on("disconnect", () => {

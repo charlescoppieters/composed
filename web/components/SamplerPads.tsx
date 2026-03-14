@@ -6,7 +6,7 @@ import { RoomSettings, StemType } from "@/lib/types";
 interface Props {
   settings: RoomSettings;
   roomCode: string;
-  onPreview: (audioUrl: string) => Promise<void>;
+  localDestination: Tone.ToneAudioNode;
   onPush: (audioUrl: string, name: string, stemType: StemType) => void;
 }
 
@@ -97,26 +97,48 @@ function triggerSynth(synth: Tone.ToneAudioNode, index: number, time?: number) {
   }
 }
 
-export default function SamplerPads({ settings, roomCode, onPreview, onPush }: Props) {
+export default function SamplerPads({ settings, roomCode, localDestination, onPush }: Props) {
   const [grid, setGrid] = useState<boolean[][]>(
     Array(PAD_COUNT).fill(null).map(() => Array(STEPS).fill(false))
   );
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
-  const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
   const synthsRef = useRef<Tone.ToneAudioNode[]>([]);
   const sequenceRef = useRef<Tone.Sequence | null>(null);
 
-  // Create synths on mount
+  // Keep grid ref current for the sequence callback
+  const gridRef = useRef(grid);
+  gridRef.current = grid;
+
+  // Create synths routed through localDestination, and start sequence synced to transport
   useEffect(() => {
-    const synths = KIT.map((_, i) => createDrumSynth(i, Tone.getDestination()));
+    const synths = KIT.map((_, i) => createDrumSynth(i, localDestination));
     synthsRef.current = synths;
+
+    const seq = new Tone.Sequence(
+      (time, step) => {
+        const g = gridRef.current;
+        for (let pad = 0; pad < PAD_COUNT; pad++) {
+          if (g[pad][step % STEPS]) {
+            triggerSynth(synths[pad], pad, time);
+          }
+        }
+        Tone.getDraw().schedule(() => setCurrentStep(step % STEPS), time);
+      },
+      Array.from({ length: STEPS }, (_, i) => i),
+      "16n"
+    );
+
+    seq.loop = true;
+    seq.start(0);
+    sequenceRef.current = seq;
+
     return () => {
+      seq.stop();
+      seq.dispose();
       synths.forEach((s) => s.dispose());
-      sequenceRef.current?.dispose();
     };
-  }, []);
+  }, [localDestination]);
 
   const toggleStep = (padIndex: number, stepIndex: number) => {
     setGrid((prev) => {
@@ -131,50 +153,12 @@ export default function SamplerPads({ settings, roomCode, onPreview, onPush }: P
     triggerSynth(synthsRef.current[padIndex], padIndex);
   };
 
-  // Keep grid ref current for the sequence callback
-  const gridRef = useRef(grid);
-  gridRef.current = grid;
-
-  const togglePlayback = useCallback(async () => {
-    await Tone.start();
-
-    if (isPlaying) {
-      Tone.getTransport().stop();
-      sequenceRef.current?.dispose();
-      sequenceRef.current = null;
-      setIsPlaying(false);
-      setCurrentStep(-1);
-      return;
-    }
-
-    Tone.getTransport().bpm.value = settings.bpm;
-
-    sequenceRef.current = new Tone.Sequence(
-      (time, step) => {
-        const g = gridRef.current;
-        for (let pad = 0; pad < PAD_COUNT; pad++) {
-          if (g[pad][step % STEPS]) {
-            triggerSynth(synthsRef.current[pad], pad, time);
-          }
-        }
-        Tone.getDraw().schedule(() => setCurrentStep(step % STEPS), time);
-      },
-      Array.from({ length: STEPS }, (_, i) => i),
-      "16n"
-    );
-
-    sequenceRef.current.loop = true;
-    sequenceRef.current.start(0);
-    Tone.getTransport().start();
-    setIsPlaying(true);
-  }, [isPlaying, settings.bpm]);
-
-  const renderAndUpload = useCallback(async () => {
+  const renderAndPush = useCallback(async () => {
     setIsRendering(true);
     try {
       const loopDuration = (settings.barCount * 4 * 60) / settings.bpm;
 
-      // Render offline
+      const sampleRate = 22050;
       const buffer = await Tone.Offline(({ transport }) => {
         transport.bpm.value = settings.bpm;
         const offlineSynths = KIT.map((_, i) => createDrumSynth(i, Tone.getDestination()));
@@ -193,25 +177,27 @@ export default function SamplerPads({ settings, roomCode, onPreview, onPush }: P
         seq.loop = true;
         seq.start(0);
         transport.start();
-      }, loopDuration);
+      }, loopDuration, 1, sampleRate);
 
-      // Convert to WAV blob
       const wavBlob = bufferToWav(buffer);
 
-      // Upload to R2
       const formData = new FormData();
       formData.append("file", wavBlob, "groove.wav");
       formData.append("roomCode", roomCode);
       const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.details || errData.error || "Upload failed");
+      }
       const { url } = await res.json();
-      setRenderedUrl(url);
-      await onPreview(url);
+      onPush(url, "909 Groove", "drums");
+      setGrid(Array(PAD_COUNT).fill(null).map(() => Array(STEPS).fill(false)));
     } catch (err) {
       console.error("Render failed:", err);
     } finally {
       setIsRendering(false);
     }
-  }, [grid, settings, roomCode, onPreview]);
+  }, [grid, settings, roomCode, onPush]);
 
   return (
     <div className="space-y-5">
@@ -279,48 +265,17 @@ export default function SamplerPads({ settings, roomCode, onPreview, onPush }: P
       {/* Controls */}
       <div className="flex gap-3 items-center">
         <button
-          onClick={togglePlayback}
-          className={`px-5 py-2 rounded-lg font-semibold text-sm transition
-            ${isPlaying ? "bg-red-600 hover:bg-red-500" : "bg-green-600 hover:bg-green-500"}`}
-        >
-          {isPlaying ? "Stop" : "Play"}
-        </button>
-        <button
-          onClick={renderAndUpload}
+          onClick={renderAndPush}
           disabled={isRendering || grid.every((row) => row.every((s) => !s))}
           className="px-5 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700
                      disabled:text-gray-500 rounded-lg text-sm font-semibold transition"
         >
-          {isRendering ? "Rendering..." : "Render & Preview"}
+          {isRendering ? "Pushing..." : "Push to Master"}
         </button>
         <span className="text-gray-500 text-xs font-mono">
           {settings.bpm} BPM · {settings.barCount} bars
         </span>
       </div>
-
-      {/* Rendered result */}
-      {renderedUrl && (
-        <div className="bg-gray-900 rounded-lg p-4 flex gap-2">
-          <button
-            onClick={() => onPreview(renderedUrl)}
-            className="flex-1 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-medium"
-          >
-            Preview Again
-          </button>
-          <button
-            onClick={renderAndUpload}
-            className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium"
-          >
-            Re-render
-          </button>
-          <button
-            onClick={() => onPush(renderedUrl, "909 Groove", "drums")}
-            className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium"
-          >
-            Push to Master
-          </button>
-        </div>
-      )}
     </div>
   );
 }
