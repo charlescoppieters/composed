@@ -41,7 +41,6 @@ function createDrumSynth(index: number, destination: Tone.ToneAudioNode): Tone.T
       }).connect(destination);
     case 2: // Closed HH
       return new Tone.MetalSynth({
-        frequency: 400,
         envelope: { attack: 0.001, decay: 0.05, release: 0.01 },
         harmonicity: 5.1,
         modulationIndex: 32,
@@ -50,7 +49,6 @@ function createDrumSynth(index: number, destination: Tone.ToneAudioNode): Tone.T
       }).connect(destination);
     case 3: // Open HH
       return new Tone.MetalSynth({
-        frequency: 400,
         envelope: { attack: 0.001, decay: 0.3, release: 0.1 },
         harmonicity: 5.1,
         modulationIndex: 32,
@@ -88,13 +86,14 @@ function createDrumSynth(index: number, destination: Tone.ToneAudioNode): Tone.T
 }
 
 function triggerSynth(synth: Tone.ToneAudioNode, index: number, time?: number) {
+  const t = time ?? Tone.now();
   if (synth instanceof Tone.MembraneSynth) {
     const notes: Record<number, string> = { 0: "C1", 5: "G3", 6: "G1", 7: "D2" };
-    synth.triggerAttackRelease(notes[index] || "C2", "8n", time);
+    synth.triggerAttackRelease(notes[index] || "C2", "8n", t);
   } else if (synth instanceof Tone.NoiseSynth) {
-    synth.triggerAttackRelease("16n", time);
+    synth.triggerAttackRelease("16n", t);
   } else if (synth instanceof Tone.MetalSynth) {
-    synth.triggerAttackRelease("32n", time);
+    synth.triggerAttackRelease("32n", t);
   }
 }
 
