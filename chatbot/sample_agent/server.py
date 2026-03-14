@@ -1,5 +1,7 @@
 """FastAPI server with SSE streaming for the Sample Agent."""
 
+import json
+from collections import defaultdict
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,6 +17,7 @@ from sample_agent.agent import create_agent
 from sample_agent.sse import format_sse, map_stream_event
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CATALOG_PATH = PROJECT_ROOT / "samples" / "_index" / "catalog.jsonl"
 load_dotenv(PROJECT_ROOT / ".env")
 
 app = FastAPI(title="Sample Agent API", version="0.1.0")
@@ -35,6 +38,31 @@ class ChatRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/catalog/tree")
+async def catalog_tree():
+    """Return the sample library organized by category."""
+    categories: dict[str, list[dict]] = defaultdict(list)
+
+    with open(CATALOG_PATH, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            categories[entry["category"]].append({
+                "id": entry["id"],
+                "title": entry["title"],
+                "audioPath": entry["audioPath"],
+            })
+
+    # Sort samples by title within each category
+    for samples in categories.values():
+        samples.sort(key=lambda s: s["title"])
+
+    # Return categories sorted alphabetically
+    return {"categories": dict(sorted(categories.items()))}
 
 
 async def _run_agent_stream(message: str, model: str):
