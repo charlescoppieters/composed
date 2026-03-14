@@ -316,9 +316,15 @@ def ingest_pack(
         staging_dir = zip_path.parent / "_staging"
     staging_dir = Path(staging_dir)
 
-    # Extract
+    # Extract — normalize backslash paths (Windows-created zips)
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(staging_dir)
+        for member in zf.infolist():
+            # Normalize backslashes to forward slashes
+            member.filename = member.filename.replace("\\", "/")
+            # Skip macOS resource forks inside zip
+            if "__MACOSX" in member.filename:
+                continue
+            zf.extract(member, staging_dir)
 
     results = []
     for wav_path in sorted(staging_dir.rglob("*.wav")):

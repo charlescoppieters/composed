@@ -79,3 +79,7 @@ def main(argv=None):
     sidecar_path.write_text(json.dumps(updated, indent=2, sort_keys=True), encoding="utf-8")
     print(f"Updated metadata for {args.sample_id}")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
