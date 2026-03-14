@@ -1,5 +1,2 @@
 [build]
 dockerfilePath = "Dockerfile"
-
-[deploy]
-startCommand = "node server/dist/index.js"
