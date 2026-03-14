@@ -165,7 +165,12 @@ interface ParsedSample {
   audioPath: string;
 }
 
-const SAMPLE_PATH_RE = /samples\/library\/([^/\s]+)\/([^\s]+\.wav)/g;
+const SAMPLE_PATH_RE = /samples\/library\/([^/]+)\/(.+?\.wav)/g;
+
+/** Encode each segment of a path for use in a URL (preserves `/`). */
+function encodePath(p: string): string {
+  return p.split("/").map(encodeURIComponent).join("/");
+}
 
 function parseMessageForSamples(text: string): { samples: ParsedSample[]; textWithoutPaths: string } {
   const samples: ParsedSample[] = [];
@@ -188,7 +193,7 @@ function parseMessageForSamples(text: string): { samples: ParsedSample[]; textWi
   }
 
   // Strip the raw path lines from text for cleaner display
-  const textWithoutPaths = text.replace(/^\s*samples\/library\/[^\s]+\.wav\s*$/gm, "").replace(/\n{3,}/g, "\n\n");
+  const textWithoutPaths = text.replace(/`audio:\s*samples\/library\/.+?\.wav`/g, "").replace(/^\s*samples\/library\/.+?\.wav\s*$/gm, "").replace(/\n{3,}/g, "\n\n");
 
   return { samples, textWithoutPaths };
 }
@@ -254,7 +259,7 @@ function SampleCard({
   const playing = checkPlaying(sample.id);
   const progress = isActive && state.duration > 0 ? state.currentTime / state.duration : 0;
 
-  const url = `${apiUrl}/${sample.audioPath}`;
+  const url = `${apiUrl}/${encodePath(sample.audioPath)}`;
 
   const categoryColors: Record<string, string> = {
     kick: "#ef4444",
@@ -686,7 +691,7 @@ function FileBrowser({
   const { state, play, seek, isPlaying: checkPlaying } = sharedAudio;
 
   const togglePlay = (sample: CatalogSample) => {
-    play(sample.id, `${apiUrl}/${sample.audioPath}`);
+    play(sample.id, `${apiUrl}/${encodePath(sample.audioPath)}`);
   };
 
   useEffect(() => {
@@ -1004,7 +1009,7 @@ export default function SampleChat({
                           ))}
                           {msg.content && (() => {
                             // Only parse samples after streaming is done
-                            const hasSamples = !isThisMsgStreaming && /samples\/library\/[^\s]+\.wav/.test(msg.content);
+                            const hasSamples = !isThisMsgStreaming && /samples\/library\/.+?\.wav/.test(msg.content);
                             if (hasSamples) {
                               const { samples, textWithoutPaths } = parseMessageForSamples(msg.content);
                               return (

@@ -5,9 +5,9 @@ from collections import defaultdict
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents import Runner
@@ -63,6 +63,18 @@ async def catalog_tree():
 
     # Return categories sorted alphabetically
     return {"categories": dict(sorted(categories.items()))}
+
+
+@app.get("/samples/{path:path}")
+async def serve_sample(path: str):
+    """Serve an audio file from the sample library."""
+    file_path = (PROJECT_ROOT / "samples" / path).resolve()
+    # Prevent path traversal
+    if not str(file_path).startswith(str((PROJECT_ROOT / "samples").resolve())):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Sample not found")
+    return FileResponse(file_path, media_type="audio/wav")
 
 
 async def _run_agent_stream(message: str, model: str):
