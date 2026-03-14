@@ -14,9 +14,15 @@ interface ToolCall {
 }
 
 interface Message {
+  id: string;
   role: "user" | "assistant";
   content: string;
   toolCalls?: ToolCall[];
+}
+
+let _msgId = 0;
+function nextMsgId() {
+  return `msg-${++_msgId}-${Date.now()}`;
 }
 
 interface SampleChatProps {
@@ -60,11 +66,11 @@ function useSampleChat(apiUrl: string) {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      const userMsg: Message = { role: "user", content: text };
+      const userMsg: Message = { id: nextMsgId(), role: "user", content: text };
       setMessages((prev) => [...prev, userMsg]);
       setIsStreaming(true);
 
-      const assistantMsg: Message = { role: "assistant", content: "", toolCalls: [] };
+      const assistantMsg: Message = { id: nextMsgId(), role: "assistant", content: "", toolCalls: [] };
       setMessages((prev) => [...prev, assistantMsg]);
 
       const controller = new AbortController();
@@ -343,8 +349,8 @@ export default function SampleChat({
         <div style={STYLES.panel}>
           <div style={{ ...STYLES.header, background: accentColor }}>{title}</div>
           <div style={STYLES.messages}>
-            {messages.map((msg, i) => (
-              <div key={i}>
+            {messages.map((msg) => (
+              <div key={msg.id}>
                 {msg.role === "user" ? (
                   <div style={{ ...STYLES.userMsg, background: accentColor }}>{msg.content}</div>
                 ) : (

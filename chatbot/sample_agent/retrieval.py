@@ -27,7 +27,6 @@ TOKEN_NORMALIZATION = {
     "riser": "transition",
     "hihat": "hat",
     "hihats": "hat",
-    "hi": "hat",
 }
 
 STOP_WORDS = {
