@@ -1,22 +1,40 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
+import { DEFAULT_SETTINGS } from "@/lib/constants";
 import MasterControls from "./MasterControls";
 import TrackList from "./TrackList";
 import ListenModeToggle from "./ListenModeToggle";
 import CreationPanel from "./CreationPanel";
 
 export default function JamSession({ roomCode }: { roomCode: string }) {
-  const { room, userId, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
+  const router = useRouter();
+  const { room, userId, createRoom, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
   const joinedRef = useRef(false);
 
   useEffect(() => {
     if (joinedRef.current || room) return;
     joinedRef.current = true;
     const userName = sessionStorage.getItem("composed-username") || "Anonymous";
-    joinRoom(roomCode, userName);
-  }, [roomCode, room, joinRoom]);
+    const action = sessionStorage.getItem("composed-action") || "join";
+
+    if (roomCode === "NEW" && action === "create") {
+      const settingsStr = sessionStorage.getItem("composed-settings");
+      const settings = settingsStr ? JSON.parse(settingsStr) : DEFAULT_SETTINGS;
+      createRoom(userName, settings);
+    } else {
+      joinRoom(roomCode, userName);
+    }
+  }, [roomCode, room, joinRoom, createRoom]);
+
+  // When room is created, redirect from /room/NEW to the real code
+  useEffect(() => {
+    if (room && roomCode === "NEW") {
+      router.replace(`/room/${room.code}`);
+    }
+  }, [room, roomCode, router]);
   const {
     isPlaying,
     listenMode,

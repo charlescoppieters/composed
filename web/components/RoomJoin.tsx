@@ -1,13 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useRoom } from "@/hooks/useRoom";
 import { DEFAULT_SETTINGS, MUSICAL_KEYS, SCALES, BAR_COUNTS } from "@/lib/constants";
 import { MusicalKey, Scale } from "@/lib/types";
 
 export default function RoomJoin() {
   const router = useRouter();
-  const { room, createRoom, joinRoom } = useRoom();
   const [mode, setMode] = useState<"join" | "create">("join");
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -18,25 +16,14 @@ export default function RoomJoin() {
   const [scale, setScale] = useState<Scale>(DEFAULT_SETTINGS.scale);
   const [barCount, setBarCount] = useState<4 | 8 | 16>(DEFAULT_SETTINGS.barCount);
 
-  // Navigate when room is created
-  useEffect(() => {
-    if (room) {
-      router.push(`/room/${room.code}`);
-    }
-  }, [room, router]);
-
-  const handleJoin = async () => {
+  const handleJoin = () => {
     if (!name.trim() || !roomCode.trim()) {
       setError("Enter your name and room code");
       return;
     }
     sessionStorage.setItem("composed-username", name);
-    const success = await joinRoom(roomCode, name);
-    if (success) {
-      router.push(`/room/${roomCode.toUpperCase()}`);
-    } else {
-      setError("Room not found");
-    }
+    sessionStorage.setItem("composed-action", "join");
+    router.push(`/room/${roomCode.toUpperCase()}`);
   };
 
   const handleCreate = () => {
@@ -45,7 +32,10 @@ export default function RoomJoin() {
       return;
     }
     sessionStorage.setItem("composed-username", name);
-    createRoom(name, { bpm, key, scale, barCount });
+    sessionStorage.setItem("composed-action", "create");
+    sessionStorage.setItem("composed-settings", JSON.stringify({ bpm, key, scale, barCount }));
+    // Use a placeholder code — JamSession will create the room and get the real code
+    router.push(`/room/NEW`);
   };
 
   return (

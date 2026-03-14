@@ -9,8 +9,6 @@ export function useRoom() {
   const socket = getSocket();
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
-
     socket.on("room:state", setRoom);
 
     socket.on("room:user-joined", (user: RoomUser) => {
@@ -71,6 +69,7 @@ export function useRoom() {
 
   const createRoom = useCallback(
     (userName: string, settings: RoomSettings) => {
+      if (!socket.connected) socket.connect();
       socket.emit("room:create", userName, settings, (newRoom) => {
         setRoom(newRoom);
         setUserId(newRoom.users[0].id);
@@ -81,6 +80,7 @@ export function useRoom() {
 
   const joinRoom = useCallback(
     (code: string, userName: string): Promise<boolean> => {
+      if (!socket.connected) socket.connect();
       return new Promise((resolve) => {
         socket.emit("room:join", code, userName, (joinedRoom) => {
           if (joinedRoom) {
