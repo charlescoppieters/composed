@@ -28,8 +28,13 @@
 }
 
 body {
-  background: var(--bg-void);
-  color: var(--t1);
+  background: var(--bg-void) !important;
+  color: var(--t1) !important;
   font-family: var(--fb);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Override Tailwind preflight white background */
+html {
+  background: var(--bg-void);
 }
