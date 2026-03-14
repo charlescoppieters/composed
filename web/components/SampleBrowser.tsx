@@ -190,20 +190,21 @@ export default function SampleBrowser({ apiUrl }: Props) {
   // Browse state
   const [tree, setTree] = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   // Load catalog when browse tab is first opened
   useEffect(() => {
-    if (tab === "browse" && !tree && !treeLoading) {
+    if (tab === "browse" && !tree && !treeLoading && !treeError) {
       setTreeLoading(true);
       fetch(`${apiUrl}/catalog/tree`)
-        .then(r => r.json())
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then((data: CatalogTree) => { setTree(data); setTreeLoading(false); })
-        .catch(() => setTreeLoading(false));
+        .catch((err) => { setTreeError((err as Error).message || "Failed to connect"); setTreeLoading(false); });
     }
-  }, [tab, tree, treeLoading, apiUrl]);
+  }, [tab, tree, treeLoading, treeError, apiUrl]);
 
   const handleSend = () => {
     const t = input.trim();
@@ -312,6 +313,18 @@ export default function SampleBrowser({ apiUrl }: Props) {
         /* ─── BROWSE VIEW ─── */
         <div style={{ flex: 1, overflowY: "auto" }}>
           {treeLoading && <p style={{ color: "#5E584E", fontSize: 12, textAlign: "center", padding: 20 }}>Loading catalog...</p>}
+          {treeError && (
+            <div style={{ textAlign: "center", padding: "40px 20px" }}>
+              <p style={{ color: "#C46B5A", fontSize: 13, marginBottom: 8 }}>Could not connect to sample server</p>
+              <p style={{ color: "#5E584E", fontSize: 11, fontFamily: "var(--fm)", marginBottom: 16 }}>
+                Start the chatbot server: cd chatbot &amp;&amp; uvicorn sample_agent.server:app --port 8000
+              </p>
+              <button onClick={() => { setTreeError(null); }} style={{
+                padding: "6px 16px", borderRadius: 8, fontSize: 12, cursor: "pointer",
+                background: "rgba(232,226,217,0.03)", border: "1px solid rgba(232,226,217,0.06)", color: "#A09888",
+              }}>Retry</button>
+            </div>
+          )}
           {tree && Object.keys(tree.categories).sort().map(cat => {
             const samples = tree.categories[cat];
             const open = !!expanded[cat];
