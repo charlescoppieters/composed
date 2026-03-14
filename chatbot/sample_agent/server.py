@@ -42,21 +42,21 @@ async def _run_agent_stream(message: str, model: str):
     agent = create_agent(model=model)
     result = Runner.run_streamed(agent, message)
     tool_calls = []
+    tool_timings: dict[str, float] = {}
 
     try:
         async for event in result.stream_events():
-            mapped = map_stream_event(event)
+            mapped = map_stream_event(event, tool_timings)
             if mapped:
                 if mapped["event"] == "tool_start":
                     tool_calls.append(mapped["data"])
                 yield format_sse(mapped["event"], mapped["data"])
+        yield format_sse("done", {
+            "tool_calls": tool_calls,
+            "final_output": result.final_output if result.is_complete else None,
+        })
     except Exception as exc:
         yield format_sse("error", {"message": str(exc), "type": type(exc).__name__})
-
-    yield format_sse("done", {
-        "tool_calls": tool_calls,
-        "final_output": result.final_output if result.is_complete else None,
-    })
 
 
 @app.post("/chat/stream")
