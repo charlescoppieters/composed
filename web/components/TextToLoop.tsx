@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { RoomSettings, StemType } from "../../shared/types";
+import { RoomSettings, StemType } from "@/lib/types";
 import { STEM_TYPES, STEM_COLORS } from "@/lib/constants";
 
 interface Props {

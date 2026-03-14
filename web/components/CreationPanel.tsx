@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { RoomSettings, Track, StemType } from "../../shared/types";
+import { RoomSettings, Track, StemType } from "@/lib/types";
 import LoopBrowser from "./LoopBrowser";
 import TextToLoop from "./TextToLoop";
 import SamplerPads from "./SamplerPads";

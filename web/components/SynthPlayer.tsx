@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as Tone from "tone";
-import { RoomSettings, StemType } from "../../shared/types";
+import { RoomSettings, StemType } from "@/lib/types";
 
 interface Props {
   settings: RoomSettings;

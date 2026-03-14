@@ -1,4 +1,4 @@
-import { MusicalKey, Scale, StemType } from "../../shared/types";
+import { MusicalKey, Scale, StemType } from "@/lib/types";
 
 export const MUSICAL_KEYS: MusicalKey[] = [
   "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",

@@ -1,5 +1,5 @@
 "use client";
-import { RoomSettings } from "../../shared/types";
+import { RoomSettings } from "@/lib/types";
 import { MUSICAL_KEYS, SCALES, BAR_COUNTS } from "@/lib/constants";
 
 interface Props {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadToR2 } from "@/lib/r2";
 import { buildLoopPrompt } from "@/lib/elevenlabs";
-import { RoomSettings, StemType } from "../../../../shared/types";
+import { RoomSettings, StemType } from "@/lib/types";
 import { v4 as uuid } from "uuid";
 
 export async function POST(req: NextRequest) {

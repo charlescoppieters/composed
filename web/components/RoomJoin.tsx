@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
 import { DEFAULT_SETTINGS, MUSICAL_KEYS, SCALES, BAR_COUNTS } from "@/lib/constants";
-import { MusicalKey, Scale } from "../../shared/types";
+import { MusicalKey, Scale } from "@/lib/types";
 
 export default function RoomJoin() {
   const router = useRouter();

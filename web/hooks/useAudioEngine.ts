@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getAudioEngine, ListenMode } from "@/lib/audio-engine";
-import { Track, RoomSettings } from "../../shared/types";
+import { Track, RoomSettings } from "@/lib/types";
 
 export function useAudioEngine(settings: RoomSettings | null, tracks: Track[]) {
   const engineRef = useRef(getAudioEngine());

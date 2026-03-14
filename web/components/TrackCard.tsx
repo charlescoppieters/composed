@@ -1,5 +1,5 @@
 "use client";
-import { Track } from "../../shared/types";
+import { Track } from "@/lib/types";
 import { STEM_COLORS } from "@/lib/constants";
 
 interface Props {

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { RoomSettings, StemType, LoopMeta } from "../../shared/types";
+import { RoomSettings, StemType, LoopMeta } from "@/lib/types";
 import { STEM_TYPES, STEM_COLORS } from "@/lib/constants";
 
 interface Props {

@@ -1,4 +1,4 @@
-import { RoomSettings, StemType } from "../../shared/types";
+import { RoomSettings, StemType } from "@/lib/types";
 
 export function buildLoopPrompt(
   userQuery: string,

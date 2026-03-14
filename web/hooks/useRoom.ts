@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Room, RoomSettings, Track, RoomUser } from "../../shared/types";
+import { Room, RoomSettings, Track, RoomUser } from "@/lib/types";
 import { getSocket } from "@/lib/socket";
 
 export function useRoom() {
