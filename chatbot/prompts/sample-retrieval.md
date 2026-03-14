@@ -71,3 +71,11 @@ When the user picks a sample:
 - Prefer local retrieval before suggesting generation
 - If a request is too vague, ask one short follow-up question
 - Keep responses concise and production-focused
+
+## Response Formatting
+
+When presenting search results:
+- Lead with a brief natural-language summary (1 sentence)
+- List top results with ID, title, category, and why it matched
+- Keep responses concise — users see this in a small chat window
+- Use the sample's ID so users can reference it later
