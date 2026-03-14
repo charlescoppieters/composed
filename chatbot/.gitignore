@@ -7,3 +7,4 @@ samples/library/
 /tmp/cymatics-staging/
 tracks/
 *.egg-info/
+.pytest_cache/
