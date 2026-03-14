@@ -80,7 +80,7 @@ class AudioEngine {
     // serverNow = Date.now() + clockOffset (offset = server - client)
     const serverNowMs = Date.now() + clockOffset;
     const elapsedSec = (serverNowMs - clockStartTime) / 1000;
-    const positionSec = ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec;
+    const positionSec = Math.max(0, ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec);
 
     console.log("[CLOCK SYNC]", {
       clockOffset: Math.round(clockOffset * 100) / 100,
