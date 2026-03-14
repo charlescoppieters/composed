@@ -8,4 +8,4 @@ COPY server/ .
 RUN npx tsc
 EXPOSE 3001
 ENV PORT=3001
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/server/src/index.js"]
