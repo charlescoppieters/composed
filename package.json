@@ -1,5 +1,9 @@
 {
   "name": "composed",
   "private": true,
-  "workspaces": ["web", "server", "shared"]
+  "workspaces": ["web", "server", "shared"],
+  "scripts": {
+    "build": "cd server && npx tsc",
+    "start": "node server/dist/server/src/index.js"
+  }
 }
