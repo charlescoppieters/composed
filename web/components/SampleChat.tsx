@@ -1,7 +1,7 @@
 // chat-widget/SampleChat.tsx
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // --- Types ---
 
@@ -30,6 +30,346 @@ interface SampleChatProps {
   title?: string;
   placeholder?: string;
   accentColor?: string;
+}
+
+// --- Lightweight Markdown ---
+
+function renderMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split("\n");
+  const result: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) result.push(<br key={`br-${i}`} />);
+    const parts = lines[i].split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j];
+      if (part.startsWith("**") && part.endsWith("**")) {
+        result.push(<strong key={`${i}-${j}`}>{part.slice(2, -2)}</strong>);
+      } else if (part.startsWith("*") && part.endsWith("*")) {
+        result.push(<em key={`${i}-${j}`}>{part.slice(1, -1)}</em>);
+      } else if (part.startsWith("`") && part.endsWith("`")) {
+        result.push(
+          <code
+            key={`${i}-${j}`}
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              padding: "1px 5px",
+              borderRadius: 4,
+              fontSize: "0.9em",
+              fontFamily: "'SF Mono', 'Fira Code', monospace",
+            }}
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      } else {
+        result.push(part);
+      }
+    }
+  }
+  return result;
+}
+
+// --- Shared Audio Manager ---
+// Ensures only one sample plays at a time across chat + browser
+
+interface AudioState {
+  playingId: string | null;
+  currentTime: number;
+  duration: number;
+}
+
+function useSharedAudio() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [state, setState] = useState<AudioState>({ playingId: null, currentTime: 0, duration: 0 });
+  const rafRef = useRef<number | null>(null);
+
+  const tick = useCallback(() => {
+    const a = audioRef.current;
+    if (a && !a.paused) {
+      setState((s) => ({ ...s, currentTime: a.currentTime, duration: a.duration || 0 }));
+      rafRef.current = requestAnimationFrame(tick);
+    }
+  }, []);
+
+  const play = useCallback(
+    (id: string, url: string) => {
+      // If same sample, toggle pause/resume
+      if (state.playingId === id && audioRef.current) {
+        if (audioRef.current.paused) {
+          audioRef.current.play();
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          audioRef.current.pause();
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        }
+        return;
+      }
+      // Stop previous
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+      const audio = new Audio(url);
+      audio.onended = () => {
+        setState({ playingId: null, currentTime: 0, duration: 0 });
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
+      audio.onloadedmetadata = () => {
+        setState((s) => ({ ...s, duration: audio.duration || 0 }));
+      };
+      audio.play();
+      audioRef.current = audio;
+      setState({ playingId: id, currentTime: 0, duration: 0 });
+      rafRef.current = requestAnimationFrame(tick);
+    },
+    [state.playingId, tick]
+  );
+
+  const stop = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    setState({ playingId: null, currentTime: 0, duration: 0 });
+  }, []);
+
+  const seek = useCallback(
+    (fraction: number) => {
+      const a = audioRef.current;
+      if (a && a.duration) {
+        a.currentTime = fraction * a.duration;
+        setState((s) => ({ ...s, currentTime: a.currentTime }));
+      }
+    },
+    []
+  );
+
+  const isPlaying = useCallback(
+    (id: string) => state.playingId === id && audioRef.current != null && !audioRef.current.paused,
+    [state.playingId]
+  );
+
+  return { state, play, stop, seek, isPlaying, audioRef };
+}
+
+// --- Sample Parsing ---
+
+interface ParsedSample {
+  id: string;
+  title: string;
+  category: string;
+  audioPath: string;
+}
+
+const SAMPLE_PATH_RE = /samples\/library\/([^/\s]+)\/([^\s]+\.wav)/g;
+
+function parseMessageForSamples(text: string): { samples: ParsedSample[]; textWithoutPaths: string } {
+  const samples: ParsedSample[] = [];
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+
+  // Reset lastIndex
+  SAMPLE_PATH_RE.lastIndex = 0;
+  while ((match = SAMPLE_PATH_RE.exec(text)) !== null) {
+    const category = match[1];
+    const filename = match[2];
+    const audioPath = match[0];
+    const id = `chat-${category}-${filename}`;
+    if (!seen.has(id)) {
+      seen.add(id);
+      // Build title from filename: strip extension, replace " - " patterns
+      const title = filename.replace(/\.wav$/i, "").replace(/\s*-\s*/g, " — ");
+      samples.push({ id, title, category, audioPath });
+    }
+  }
+
+  // Strip the raw path lines from text for cleaner display
+  const textWithoutPaths = text.replace(/^\s*samples\/library\/[^\s]+\.wav\s*$/gm, "").replace(/\n{3,}/g, "\n\n");
+
+  return { samples, textWithoutPaths };
+}
+
+function formatTime(seconds: number): string {
+  if (!seconds || !isFinite(seconds)) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// --- Fake Waveform ---
+
+function FakeWaveform({ barCount, progress, accentColor }: { barCount: number; progress: number; accentColor: string }) {
+  // Generate deterministic-looking random bar heights using a simple seed
+  const bars = useMemo(() => {
+    const b: number[] = [];
+    let seed = 42;
+    for (let i = 0; i < barCount; i++) {
+      seed = (seed * 16807 + 7) % 2147483647;
+      b.push(0.15 + 0.85 * ((seed % 100) / 100));
+    }
+    return b;
+  }, [barCount]);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 1, height: 24, flex: 1 }}>
+      {bars.map((h, i) => {
+        const pct = i / barCount;
+        const active = pct < progress;
+        return (
+          <div
+            key={i}
+            style={{
+              width: 2,
+              height: `${h * 100}%`,
+              borderRadius: 1,
+              background: active ? accentColor : "rgba(255,255,255,0.15)",
+              transition: "background 0.1s",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Inline Sample Card ---
+
+function SampleCard({
+  sample,
+  apiUrl,
+  accentColor,
+  sharedAudio,
+}: {
+  sample: ParsedSample;
+  apiUrl: string;
+  accentColor: string;
+  sharedAudio: ReturnType<typeof useSharedAudio>;
+}) {
+  const { state, play, seek, isPlaying: checkPlaying } = sharedAudio;
+  const isActive = state.playingId === sample.id;
+  const playing = checkPlaying(sample.id);
+  const progress = isActive && state.duration > 0 ? state.currentTime / state.duration : 0;
+
+  const url = `${apiUrl}/${sample.audioPath}`;
+
+  const categoryColors: Record<string, string> = {
+    kick: "#ef4444",
+    "808": "#f97316",
+    snare: "#eab308",
+    hihat: "#22c55e",
+    pad: "#3b82f6",
+    fx: "#a855f7",
+    vocal: "#ec4899",
+    bass: "#f97316",
+    clap: "#14b8a6",
+    perc: "#6366f1",
+  };
+
+  const badgeColor = categoryColors[sample.category.toLowerCase()] || "#6b7280";
+
+  return (
+    <div
+      style={{
+        background: isActive ? "rgba(124, 58, 237, 0.08)" : "#1e1e38",
+        border: `1px solid ${isActive ? "rgba(124, 58, 237, 0.3)" : "#2a2a4a"}`,
+        borderRadius: 10,
+        padding: "10px 12px",
+        margin: "6px 0",
+        transition: "all 0.2s ease",
+      }}
+    >
+      {/* Top row: play button, title, category badge */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <button
+          onClick={() => play(sample.id, url)}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 14,
+            color: "#fff",
+            background: playing ? accentColor : "rgba(124, 58, 237, 0.5)",
+            transition: "all 0.2s ease",
+            flexShrink: 0,
+            boxShadow: playing ? `0 0 12px ${accentColor}66` : "none",
+          }}
+          aria-label={playing ? "Pause" : "Play"}
+        >
+          {playing ? "\u275A\u275A" : "\u25B6"}
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 13,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              color: "#e8e8f0",
+            }}
+          >
+            {sample.title}
+          </div>
+        </div>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            padding: "2px 7px",
+            borderRadius: 4,
+            background: `${badgeColor}22`,
+            color: badgeColor,
+            border: `1px solid ${badgeColor}44`,
+            flexShrink: 0,
+          }}
+        >
+          {sample.category}
+        </span>
+      </div>
+
+      {/* Waveform + progress */}
+      <div
+        style={{ position: "relative", cursor: "pointer", marginBottom: 4 }}
+        onClick={(e) => {
+          if (!isActive) {
+            play(sample.id, url);
+            return;
+          }
+          const rect = e.currentTarget.getBoundingClientRect();
+          const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          seek(frac);
+        }}
+      >
+        <FakeWaveform barCount={50} progress={progress} accentColor="#f59e0b" />
+      </div>
+
+      {/* Time display */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          fontFamily: "'SF Mono', 'Fira Code', monospace",
+          opacity: 0.5,
+          marginTop: 2,
+        }}
+      >
+        <span>{isActive ? formatTime(state.currentTime) : "0:00"}</span>
+        <span>{isActive && state.duration > 0 ? formatTime(state.duration) : "--:--"}</span>
+      </div>
+    </div>
+  );
 }
 
 // --- SSE Parser ---
@@ -235,7 +575,6 @@ const STYLES = {
     borderRadius: "16px 16px 16px 4px",
     maxWidth: "88%",
     wordBreak: "break-word" as const,
-    whiteSpace: "pre-wrap" as const,
   },
   toolCard: {
     margin: "4px 0",
@@ -329,12 +668,26 @@ interface CatalogTree {
 
 // --- File Browser Component ---
 
-function FileBrowser({ apiUrl, accentColor }: { apiUrl: string; accentColor: string }) {
+function FileBrowser({
+  apiUrl,
+  accentColor,
+  sharedAudio,
+}: {
+  apiUrl: string;
+  accentColor: string;
+  sharedAudio: ReturnType<typeof useSharedAudio>;
+}) {
   const [tree, setTree] = useState<CatalogTree | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const hasFetched = useRef(false);
+
+  const { state, play, seek, isPlaying: checkPlaying } = sharedAudio;
+
+  const togglePlay = (sample: CatalogSample) => {
+    play(sample.id, `${apiUrl}/${sample.audioPath}`);
+  };
 
   useEffect(() => {
     if (hasFetched.current) return;
@@ -433,39 +786,121 @@ function FileBrowser({ apiUrl, accentColor }: { apiUrl: string; accentColor: str
             </div>
             {isExpanded && (
               <div style={{ paddingLeft: 28 }}>
-                {samples.map((sample) => (
-                  <div
-                    key={sample.id}
-                    style={{
-                      padding: "3px 8px",
-                      borderRadius: 4,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      cursor: "default",
-                      transition: "background 0.15s",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        "rgba(255,255,255,0.05)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.background = "transparent";
-                    }}
-                    title={sample.id}
-                  >
-                    <span style={{ opacity: 0.5 }}>{"\uD83D\uDCC4"}</span>
-                    <span
+                {samples.map((sample) => {
+                  const isActive = state.playingId === sample.id;
+                  const playing = checkPlaying(sample.id);
+                  const progress = isActive && state.duration > 0 ? state.currentTime / state.duration : 0;
+
+                  return (
+                    <div
+                      key={sample.id}
                       style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        cursor: "default",
+                        transition: "background 0.15s",
+                        background: isActive ? "rgba(124, 58, 237, 0.1)" : "transparent",
                       }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.05)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                      }}
+                      title={sample.id}
                     >
-                      {sample.title}
-                    </span>
-                  </div>
-                ))}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); togglePlay(sample); }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: 0,
+                            fontSize: 14,
+                            lineHeight: 1,
+                            color: isActive ? accentColor : "rgba(255,255,255,0.5)",
+                            transition: "color 0.15s, text-shadow 0.2s",
+                            flexShrink: 0,
+                            textShadow: playing ? `0 0 8px ${accentColor}88` : "none",
+                          }}
+                          aria-label={playing ? `Pause ${sample.title}` : `Play ${sample.title}`}
+                        >
+                          {playing ? "\u275A\u275A" : "\u25B6"}
+                        </button>
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                            color: isActive ? "#e8e8f0" : undefined,
+                          }}
+                        >
+                          {sample.title}
+                        </span>
+                        {/* Animated equalizer bars when playing */}
+                        {playing && (
+                          <span style={{ display: "flex", alignItems: "flex-end", gap: 1, height: 14, flexShrink: 0 }}>
+                            {[0, 1, 2].map((i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  display: "inline-block",
+                                  width: 2,
+                                  background: accentColor,
+                                  borderRadius: 1,
+                                  animation: `eqBounce 0.${4 + i * 2}s ease-in-out infinite alternate`,
+                                }}
+                              />
+                            ))}
+                          </span>
+                        )}
+                        {isActive && state.duration > 0 && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontFamily: "'SF Mono', 'Fira Code', monospace",
+                              opacity: 0.5,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {formatTime(state.currentTime)}/{formatTime(state.duration)}
+                          </span>
+                        )}
+                      </div>
+                      {/* Compact progress bar */}
+                      {isActive && (
+                        <div
+                          style={{
+                            height: 2,
+                            background: "rgba(255,255,255,0.08)",
+                            borderRadius: 1,
+                            marginTop: 3,
+                            cursor: "pointer",
+                            overflow: "hidden",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            seek(frac);
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${progress * 100}%`,
+                              background: `linear-gradient(90deg, ${accentColor}, #f59e0b)`,
+                              borderRadius: 1,
+                              transition: "width 0.1s linear",
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -488,6 +923,7 @@ export default function SampleChat({
   const [input, setInput] = useState("");
   const { messages, sendMessage, isStreaming } = useSampleChat(apiUrl);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const sharedAudio = useSharedAudio();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -503,7 +939,10 @@ export default function SampleChat({
   return (
     <>
       {/* Spinner keyframes injected once */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes eqBounce { from { height: 3px; } to { height: 14px; } }
+      `}</style>
 
       {/* Chat Panel */}
       {isOpen && (
@@ -547,24 +986,57 @@ export default function SampleChat({
           {view === "chat" ? (
             <>
               <div style={STYLES.messages}>
-                {messages.map((msg) => (
-                  <div key={msg.id}>
-                    {msg.role === "user" ? (
-                      <div style={{ ...STYLES.userMsg, background: accentColor }}>
-                        {msg.content}
-                      </div>
-                    ) : (
-                      <div>
-                        {msg.toolCalls?.map((tool, j) => (
-                          <ToolTraceCard key={j} tool={tool} />
-                        ))}
-                        {msg.content && (
-                          <div style={STYLES.assistantMsg}>{msg.content}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {messages.map((msg, msgIdx) => {
+                  // Determine if this is the last message and still streaming
+                  const isLastMsg = msgIdx === messages.length - 1;
+                  const isThisMsgStreaming = isLastMsg && isStreaming && msg.role === "assistant";
+
+                  return (
+                    <div key={msg.id}>
+                      {msg.role === "user" ? (
+                        <div style={{ ...STYLES.userMsg, background: accentColor }}>
+                          {msg.content}
+                        </div>
+                      ) : (
+                        <div>
+                          {msg.toolCalls?.map((tool, j) => (
+                            <ToolTraceCard key={j} tool={tool} />
+                          ))}
+                          {msg.content && (() => {
+                            // Only parse samples after streaming is done
+                            const hasSamples = !isThisMsgStreaming && /samples\/library\/[^\s]+\.wav/.test(msg.content);
+                            if (hasSamples) {
+                              const { samples, textWithoutPaths } = parseMessageForSamples(msg.content);
+                              return (
+                                <>
+                                  <div style={STYLES.assistantMsg}>
+                                    {renderMarkdown(textWithoutPaths)}
+                                  </div>
+                                  {samples.length > 0 && (
+                                    <div style={{ marginTop: 4 }}>
+                                      {samples.map((s) => (
+                                        <SampleCard
+                                          key={s.id}
+                                          sample={s}
+                                          apiUrl={apiUrl}
+                                          accentColor={accentColor}
+                                          sharedAudio={sharedAudio}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            }
+                            return (
+                              <div style={STYLES.assistantMsg}>{renderMarkdown(msg.content)}</div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 <div ref={bottomRef} />
               </div>
               <div style={STYLES.inputRow}>
@@ -590,7 +1062,7 @@ export default function SampleChat({
               </div>
             </>
           ) : (
-            <FileBrowser apiUrl={apiUrl} accentColor={accentColor} />
+            <FileBrowser apiUrl={apiUrl} accentColor={accentColor} sharedAudio={sharedAudio} />
           )}
         </div>
       )}
