@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { uploadToR2 } from "@/lib/r2";
 import { v4 as uuid } from "uuid";
 
-export const config = {
-  api: { bodyParser: false },
-};
-
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
