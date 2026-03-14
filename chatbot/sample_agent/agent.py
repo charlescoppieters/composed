@@ -75,13 +75,15 @@ def add_feedback(sample_id: str, note: str, tags: str = "") -> str:
         note: A short note about why this sample was useful.
         tags: Comma-separated tags to add (e.g. "favorite,punchy,dark").
     """
-    return _run_cli(
+    cli_args = [
         "feedback",
         "--samples-root", str(SAMPLES_ROOT),
         "--sample-id", sample_id,
         "--note", note,
-        "--tags", tags,
-    )
+    ]
+    if tags:
+        cli_args += ["--tags", tags]
+    return _run_cli(*cli_args)
 
 
 @function_tool

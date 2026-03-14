@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 TOKEN_NORMALIZATION = {
     "brighter": "bright",
     "darker": "dark",
-    "warmer": "pad",
+    "warmer": "warm",
     "colder": "cold",
     "shorter": "short",
     "longer": "long",
