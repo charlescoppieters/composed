@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useRoom } from "@/hooks/useRoom";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
@@ -29,12 +28,12 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
     }
   }, [roomCode, room, joinRoom, createRoom]);
 
-  // When room is created, redirect from /room/NEW to the real code
+  // When room is created, update URL from /room/NEW to the real code (without remounting)
   useEffect(() => {
     if (room && roomCode === "NEW") {
-      router.replace(`/room/${room.code}`);
+      window.history.replaceState(null, "", `/room/${room.code}`);
     }
-  }, [room, roomCode, router]);
+  }, [room, roomCode]);
   const {
     isPlaying,
     listenMode,
