@@ -36,6 +36,27 @@ class AudioEngine {
     return Tone.getTransport().state === "started";
   }
 
+  play() {
+    if (!this._initialized) return;
+    const transport = Tone.getTransport();
+    if (transport.state !== "started") {
+      transport.start();
+    }
+  }
+
+  pause() {
+    const transport = Tone.getTransport();
+    if (transport.state === "started") {
+      transport.pause();
+    }
+  }
+
+  stop() {
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.seconds = 0;
+  }
+
   setBpm(bpm: number) {
     Tone.getTransport().bpm.value = bpm;
   }
@@ -59,7 +80,7 @@ class AudioEngine {
     // serverNow = Date.now() + clockOffset (offset = server - client)
     const serverNowMs = Date.now() + clockOffset;
     const elapsedSec = (serverNowMs - clockStartTime) / 1000;
-    const positionSec = ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec;
+    const positionSec = Math.max(0, ((elapsedSec % loopDurationSec) + loopDurationSec) % loopDurationSec);
 
     console.log("[CLOCK SYNC]", {
       clockOffset: Math.round(clockOffset * 100) / 100,
