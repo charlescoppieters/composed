@@ -9,7 +9,6 @@ import ListenModeToggle from "./ListenModeToggle";
 import CreationPanel from "./CreationPanel";
 
 export default function JamSession({ roomCode }: { roomCode: string }) {
-  const router = useRouter();
   const { room, userId, createRoom, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
   const joinedRef = useRef(false);
 
