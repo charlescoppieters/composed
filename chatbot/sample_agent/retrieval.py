@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 TOKEN_NORMALIZATION = {
     "brighter": "bright",
     "darker": "dark",
-    "warmer": "warm",
+    "warmer": "pad",
     "colder": "cold",
     "shorter": "short",
     "longer": "long",
@@ -19,6 +19,15 @@ TOKEN_NORMALIZATION = {
     "roomier": "roomy",
     "punchier": "punchy",
     "smoother": "smooth",
+    "crispy": "crisp",
+    "analog": "keys",
+    "analogue": "keys",
+    "warm": "pad",
+    "chop": "vocal",
+    "riser": "transition",
+    "hihat": "hat",
+    "hihats": "hat",
+    "hi": "hat",
 }
 
 STOP_WORDS = {
