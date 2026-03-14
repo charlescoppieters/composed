@@ -1,0 +1,22 @@
+[
+  {
+    "id": "drums-boom-bap-01",
+    "filename": "drums/boom-bap-01.wav",
+    "name": "Boom Bap Kit",
+    "stemType": "drums",
+    "bpm": 90,
+    "key": "C",
+    "scale": "minor",
+    "tags": ["boom bap", "hip hop", "chill"]
+  },
+  {
+    "id": "bass-sub-01",
+    "filename": "bass/sub-bass-01.wav",
+    "name": "Deep Sub Bass",
+    "stemType": "bass",
+    "bpm": 120,
+    "key": "C",
+    "scale": "minor",
+    "tags": ["sub", "deep", "electronic"]
+  }
+]

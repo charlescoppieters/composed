@@ -1,1 +1,8 @@
 .DS_Store
+node_modules/
+.env.local
+.env
+dist/
+.next/
+.vercel/
+*.tsbuildinfo

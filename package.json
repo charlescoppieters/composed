@@ -1,0 +1,5 @@
+{
+  "name": "composed",
+  "private": true,
+  "workspaces": ["web", "server", "shared"]
+}
