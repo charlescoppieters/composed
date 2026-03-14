@@ -36,6 +36,27 @@ class AudioEngine {
     return Tone.getTransport().state === "started";
   }
 
+  play() {
+    if (!this._initialized) return;
+    const transport = Tone.getTransport();
+    if (transport.state !== "started") {
+      transport.start();
+    }
+  }
+
+  pause() {
+    const transport = Tone.getTransport();
+    if (transport.state === "started") {
+      transport.pause();
+    }
+  }
+
+  stop() {
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.seconds = 0;
+  }
+
   setBpm(bpm: number) {
     Tone.getTransport().bpm.value = bpm;
   }

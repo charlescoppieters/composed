@@ -101,6 +101,24 @@ export function useAudioEngine(room: Room | null, tracks: Track[]) {
     setListenModeState(mode);
   }, []);
 
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const play = useCallback(async () => {
+    await engineRef.current.init();
+    engineRef.current.play();
+    setIsPlaying(true);
+  }, []);
+
+  const pause = useCallback(() => {
+    engineRef.current.pause();
+    setIsPlaying(false);
+  }, []);
+
+  const stop = useCallback(() => {
+    engineRef.current.stop();
+    setIsPlaying(false);
+  }, []);
+
   const previewLocal = useCallback(async (audioUrl: string) => {
     await engineRef.current.setLocalTrack(audioUrl);
   }, []);
@@ -124,9 +142,12 @@ export function useAudioEngine(room: Room | null, tracks: Track[]) {
   }, []);
 
   return {
-    isPlaying: syncedRef.current,
+    isPlaying,
     listenMode,
     setListenMode,
+    play,
+    pause,
+    stop,
     previewLocal,
     clearLocal,
     setTrackVolume,

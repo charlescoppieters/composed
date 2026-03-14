@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+:root {
+  --bg-void: #0D0C0A;
+  --bg-base: #141311;
+  --bg-raised: #1E1C19;
+  --bg-surface: #28261F;
+  --bg-hover: #322F28;
+
+  --t1: #E8E2D9;
+  --t2: #A09888;
+  --t3: #5E584E;
+
+  --amber: #CFA24B;
+  --amber-soft: rgba(207,162,75,0.12);
+  --amber-bd: rgba(207,162,75,0.25);
+  --sage: #7B9E84;
+  --sage-soft: rgba(123,158,132,0.10);
+  --sage-bd: rgba(123,158,132,0.20);
+
+  --glass: rgba(232,226,217,0.03);
+  --glass-bd: rgba(232,226,217,0.06);
+  --glass-hv: rgba(232,226,217,0.05);
+
+  --fd: 'Instrument Serif', serif;
+  --fb: 'Satoshi', sans-serif;
+  --fm: 'Geist Mono', monospace;
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--t1);
+  font-family: var(--fb);
+  -webkit-font-smoothing: antialiased;
+}
