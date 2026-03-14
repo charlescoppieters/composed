@@ -75,6 +75,37 @@ python3 -m sample_agent.cli feedback --samples-root samples --sample-id kick-001
 
 ```
 
+## Server
+
+```bash
+# Start the streaming API server
+uvicorn sample_agent.server:app --port 8000
+
+# Health check
+curl http://localhost:8000/health
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/chat/stream` | POST | SSE streaming chat (body: `{"message": "..."}`) |
+
+### SSE Event Protocol
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `tool_start` | `{name, args, id}` | Tool invocation started |
+| `tool_end` | `{id, duration_ms}` | Tool completed |
+| `token` | `{content}` | Streamed text token |
+| `error` | `{message, type}` | Error occurred |
+| `done` | `{tool_calls, final_output}` | Stream complete |
+
+## Chat Widget
+
+See `chat-widget/README.md` for integration instructions. Copy `SampleChat.tsx` into your Next.js app and point it at the server URL.
+
 ## Conventions
 
 - Python 3.10+, managed with `uv`
