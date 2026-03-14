@@ -8,6 +8,9 @@ import { Track, RoomUser } from "@/lib/types";
 import TrackList from "./TrackList";
 import CreationPanel from "./CreationPanel";
 import PianoKeys from "./PianoKeys";
+import SampleBrowser from "./SampleBrowser";
+
+const CHATBOT_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || "http://localhost:8000";
 
 const LISTEN_MODES: { value: ListenMode; label: string }[] = [
   { value: "solo", label: "Solo" },
@@ -326,11 +329,12 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
               {activeTab === "keys" && localDest && (
                 <PianoKeys settings={room.settings} localDestination={localDest} />
               )}
-              {(activeTab === "samples" || activeTab === "ai") && (
+              {activeTab === "samples" && (
+                <SampleBrowser apiUrl={CHATBOT_API_URL} />
+              )}
+              {activeTab === "ai" && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", width: "100%" }}>
-                  <p style={{ color: "#5E584E", fontSize: 13, fontFamily: "var(--fm)" }}>
-                    {activeTab === "samples" ? "Sample browser" : "AI Generate"} — coming soon
-                  </p>
+                  <p style={{ color: "#5E584E", fontSize: 13, fontFamily: "var(--fm)" }}>AI Generate — coming soon</p>
                 </div>
               )}
             </div>
