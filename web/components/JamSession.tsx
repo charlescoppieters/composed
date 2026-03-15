@@ -124,6 +124,14 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
   const [rightW, setRightW] = useState(220);
   const [mutedTracks, setMutedTracks] = useState<Set<string>>(new Set());
 
+  // Auto-switch mode when instrument changes if current mode isn't available
+  const instrumentConfig = INSTRUMENT_CONFIGS[activeInstrument];
+  useEffect(() => {
+    if (!instrumentConfig.availableModes.includes(activeMode)) {
+      setActiveMode(instrumentConfig.availableModes[0]);
+    }
+  }, [activeInstrument, activeMode, instrumentConfig.availableModes]);
+
   // Persist instrument/mode to sessionStorage
   useEffect(() => {
     sessionStorage.setItem("composed-instrument", activeInstrument);
@@ -202,7 +210,6 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
 
   const currentUser = room.users.find(u => u.id === userId);
   const currentUserIndex = room.users.findIndex(u => u.id === userId);
-  const instrumentConfig = INSTRUMENT_CONFIGS[activeInstrument];
 
   return (
     <div style={{ height: "100vh", background: "#0D0C0A", display: "flex", alignItems: "stretch", justifyContent: "center" }}>
@@ -387,7 +394,7 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             </div>
 
             {/* ═══ MODE BAR ═══ */}
-            <ModeNav active={activeMode} onChange={setActiveMode} />
+            <ModeNav active={activeMode} onChange={setActiveMode} availableModes={instrumentConfig.availableModes} />
 
             {/* ═══ TOOL AREA ═══ */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", minHeight: 200 }}>

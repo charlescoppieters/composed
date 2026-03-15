@@ -52,6 +52,14 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
   const chunksRef = useRef<Blob[]>([]);
 
   const loopDuration = (settings.barCount * 4 * 60) / settings.bpm;
+  const beatDuration = 60 / settings.bpm;
+  const totalBeats = settings.barCount * 4;
+
+  // Recording progress tracking
+  const [recordProgress, setRecordProgress] = useState(0);
+  const [currentBeat, setCurrentBeat] = useState(0);
+  const recordStartRef = useRef<number>(0);
+  const progressRafRef = useRef<number>(0);
 
   // Create synths for pads/keyboard modes
   useEffect(() => {
@@ -85,12 +93,35 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
     return () => { synth.dispose(); };
   }, [localDestination, inputType]);
 
+  // Progress animation during recording
+  const startProgressTracking = useCallback(() => {
+    recordStartRef.current = performance.now();
+    const tick = () => {
+      const elapsed = (performance.now() - recordStartRef.current) / 1000;
+      const progress = Math.min(elapsed / loopDuration, 1);
+      const beat = Math.floor(elapsed / beatDuration);
+      setRecordProgress(progress);
+      setCurrentBeat(beat);
+      if (progress < 1) {
+        progressRafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    progressRafRef.current = requestAnimationFrame(tick);
+  }, [loopDuration, beatDuration]);
+
+  const stopProgressTracking = useCallback(() => {
+    cancelAnimationFrame(progressRafRef.current);
+    setRecordProgress(0);
+    setCurrentBeat(0);
+  }, []);
+
   // Start recording
   const startRecording = useCallback(async () => {
     await Tone.start();
     setRecordState("countdown");
     setRecordedUrl(null);
     setRecordedBlob(null);
+    stopProgressTracking();
 
     if (inputType === "microphone") {
       // Request mic permission
@@ -106,12 +137,14 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
           if (count <= 0) {
             clearInterval(countdownRef.current!);
             setRecordState("recording");
+            startProgressTracking();
 
             // Start mic recording
             const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
             chunksRef.current = [];
             recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
             recorder.onstop = () => {
+              stopProgressTracking();
               const blob = new Blob(chunksRef.current, { type: "audio/webm" });
               const url = URL.createObjectURL(blob);
               setRecordedUrl(url);
@@ -150,10 +183,12 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
       if (count <= 0) {
         clearInterval(countdownRef.current!);
         setRecordState("recording");
+        startProgressTracking();
         recorder.start();
 
         // Auto-stop after loop duration
         recordTimeoutRef.current = setTimeout(async () => {
+          stopProgressTracking();
           const blob = await recorder.stop();
           localDestination.disconnect(recorder);
           const url = URL.createObjectURL(blob);
@@ -165,12 +200,13 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
         setCountdown(count);
       }
     }, (60 / settings.bpm) * 1000);
-  }, [inputType, localDestination, loopDuration, settings.bpm]);
+  }, [inputType, localDestination, loopDuration, settings.bpm, startProgressTracking, stopProgressTracking]);
 
   // Stop recording manually
   const stopRecording = useCallback(async () => {
     if (recordTimeoutRef.current) clearTimeout(recordTimeoutRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
+    stopProgressTracking();
 
     if (inputType === "microphone" && mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
@@ -182,7 +218,7 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
       setRecordedBlob(blob);
       setRecordState("preview");
     }
-  }, [inputType, localDestination]);
+  }, [inputType, localDestination, stopProgressTracking]);
 
   // Trigger drum pad
   const triggerPad = async (index: number) => {
@@ -391,12 +427,62 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
         </div>
       )}
 
-      {inputType === "microphone" && recordState === "idle" && (
-        <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <p style={{ color: "#A09888", fontSize: 13 }}>Press record to start capturing audio from your microphone</p>
-          <p style={{ color: "#5E584E", fontSize: 11, fontFamily: "var(--fm)", marginTop: 8 }}>
-            Recording length: {loopDuration.toFixed(1)}s ({settings.barCount} bars at {settings.bpm} BPM)
-          </p>
+      {/* Loop cycle timeline */}
+      {inputType === "microphone" && (recordState === "idle" || recordState === "recording") && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "8px 0" }}>
+          {/* Beat markers */}
+          <div style={{ display: "flex", gap: 2 }}>
+            {Array.from({ length: totalBeats }).map((_, i) => {
+              const beatProgress = recordState === "recording" ? recordProgress * totalBeats : 0;
+              const isFilled = i < beatProgress;
+              const isCurrent = Math.floor(beatProgress) === i && recordState === "recording";
+              const isDownbeat = i % 4 === 0;
+              return (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                  <div style={{
+                    width: "100%", height: isDownbeat ? 28 : 20, borderRadius: 4,
+                    background: isFilled
+                      ? `${config.color}${isCurrent ? "90" : "50"}`
+                      : "rgba(232,226,217,0.06)",
+                    border: isCurrent ? `2px solid ${config.color}` : "1px solid rgba(232,226,217,0.04)",
+                    transition: "background 0.1s",
+                    boxShadow: isCurrent ? `0 0 8px ${config.color}40` : "none",
+                  }} />
+                  {isDownbeat && (
+                    <span style={{ fontSize: 9, fontFamily: "var(--fm)", color: isFilled ? config.color : "#5E584E" }}>
+                      {i / 4 + 1}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Progress bar */}
+          <div style={{
+            height: 4, borderRadius: 2, background: "rgba(232,226,217,0.06)", overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%", borderRadius: 2,
+              width: `${recordProgress * 100}%`,
+              background: `linear-gradient(90deg, ${config.color}, ${config.color}80)`,
+              transition: recordState === "recording" ? "none" : "width 0.2s",
+            }} />
+          </div>
+
+          {/* Info */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, fontFamily: "var(--fm)", color: "#5E584E" }}>
+              {recordState === "recording"
+                ? `Bar ${Math.floor(currentBeat / 4) + 1} of ${settings.barCount}`
+                : `${settings.barCount} bars · ${totalBeats} beats · ${loopDuration.toFixed(1)}s`}
+            </span>
+            <span style={{ fontSize: 11, fontFamily: "var(--fm)", color: recordState === "recording" ? config.color : "#5E584E" }}>
+              {recordState === "recording"
+                ? `${(recordProgress * loopDuration).toFixed(1)}s / ${loopDuration.toFixed(1)}s`
+                : `${settings.bpm} BPM`}
+            </span>
+          </div>
         </div>
       )}
 

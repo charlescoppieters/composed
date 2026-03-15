@@ -11,6 +11,7 @@ export interface InstrumentConfig {
   stemType: StemType;
   label: string;
   color: string;
+  availableModes: ("generate" | "sequence" | "live")[];
   sequencer: {
     type: "drum" | "chromatic" | "chord" | "sample-slot";
     rows: RowConfig[];
@@ -42,6 +43,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "drums",
     label: "Drums",
     color: STEM_COLORS.drums,
+    availableModes: ["generate", "sequence", "live"],
     sequencer: {
       type: "drum",
       rows: DRUM_ROWS,
@@ -62,6 +64,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "bass",
     label: "Bass",
     color: STEM_COLORS.bass,
+    availableModes: ["generate", "sequence", "live"],
     sequencer: {
       type: "chromatic",
       rows: [], // dynamically generated from octave range
@@ -84,6 +87,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "chords",
     label: "Chords",
     color: STEM_COLORS.chords,
+    availableModes: ["generate", "sequence", "live"],
     sequencer: {
       type: "chord",
       rows: [], // dynamically generated from key/scale
@@ -105,6 +109,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "melody",
     label: "Melody",
     color: STEM_COLORS.melody,
+    availableModes: ["generate", "sequence", "live"],
     sequencer: {
       type: "chromatic",
       rows: [], // dynamically generated from octave range
@@ -127,6 +132,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "vocals",
     label: "Vocals",
     color: STEM_COLORS.vocals,
+    availableModes: ["live"],
     sequencer: {
       type: "sample-slot",
       rows: [], // user adds samples
@@ -147,6 +153,7 @@ export const INSTRUMENT_CONFIGS: Record<StemType, InstrumentConfig> = {
     stemType: "fx",
     label: "FX",
     color: STEM_COLORS.fx,
+    availableModes: ["generate", "sequence", "live"],
     sequencer: {
       type: "sample-slot",
       rows: [], // user adds samples
