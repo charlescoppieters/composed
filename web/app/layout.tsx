@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Composed",
-  description: "Collaborative Jam Sessions",
+  title: "Marmalade",
+  description: "Bringing Jamming to Life",
 };
 
 export default function RootLayout({

@@ -228,7 +228,7 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
           display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontFamily: "var(--fd)", fontSize: 20, fontStyle: "italic", color: "#E8E2D9", letterSpacing: -0.5 }}>Composed</span>
+            <span style={{ fontFamily: "var(--fd)", fontSize: 20, fontStyle: "italic", color: "#E8E2D9", letterSpacing: -0.5 }}>Marmalade</span>
             <span style={{ fontFamily: "var(--fm)", fontSize: 12, color: "#5E584E", letterSpacing: 1.5, textTransform: "uppercase" }}>{room.code}</span>
             {/* Avatar stack */}
             <div style={{ display: "flex" }}>

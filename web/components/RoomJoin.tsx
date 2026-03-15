@@ -41,8 +41,8 @@ export default function RoomJoin() {
       <div style={{ width: "100%", maxWidth: 380, padding: 32, display: "flex", flexDirection: "column", gap: 24 }}>
         {/* Logo */}
         <div style={{ textAlign: "center" }}>
-          <h1 style={{ fontFamily: "var(--fd)", fontSize: 48, fontWeight: 400, color: "var(--t1)", letterSpacing: -1 }}>Composed</h1>
-          <p style={{ color: "var(--t3)", marginTop: 6, fontSize: 14 }}>Collaborative Jam Sessions</p>
+          <h1 style={{ fontFamily: "var(--fd)", fontSize: 48, fontWeight: 400, color: "var(--t1)", letterSpacing: -1 }}>Marmalade</h1>
+          <p style={{ color: "var(--t3)", marginTop: 6, fontSize: 14 }}>Bringing Jamming to Life</p>
         </div>
 
         {/* Name */}
