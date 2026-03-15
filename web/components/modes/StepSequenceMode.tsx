@@ -93,10 +93,20 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
     }
     if (seqType === "chord") {
       const chords = getDiatonicChords(settings.key, settings.scale);
-      return chords.map(c => ({ label: `${c.numeral}`, note: c.root, color: config.color, quality: c.quality }));
+      const chordOctaves: { label: string; note: string; color: string; quality: string; octave: number }[] = [];
+      // High octaves at top, low at bottom
+      for (let oct = 5; oct >= 2; oct--) {
+        for (const c of chords) {
+          chordOctaves.push({ label: `${c.numeral} (${oct})`, note: c.root, color: config.color, quality: c.quality, octave: oct });
+        }
+      }
+      return chordOctaves;
     }
-    // sample-slot: start with 4 empty rows
-    return Array.from({ length: 4 }, (_, i) => ({ label: `Slot ${i + 1}`, note: "", color: config.color }));
+    // sample-slot: show pad labels from selected FX kit
+    if (selectedPreset.samples) {
+      return Object.keys(selectedPreset.samples).map(label => ({ label, note: label, color: config.color }));
+    }
+    return [];
   })();
 
   const rowCount = rows.length;
@@ -133,10 +143,8 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
     const setup = async () => {
       if (useDrumSamples || useFxSamples) {
         setKitLoading(true);
-        const labelKey = seqType === "drum"
-          ? rows.map(r => r.label)
-          : Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`);
-        players = labelKey.map(label => {
+        const labelKeys = Object.keys(selectedPreset.samples!);
+        players = labelKeys.map(label => {
           const url = selectedPreset.samples![label];
           return new Tone.Player(url).connect(localDestination);
         });
@@ -172,8 +180,6 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
 
       synthsRef.current = synths;
 
-      const chords = seqType === "chord" ? getDiatonicChords(settings.key, settings.scale) : [];
-
       if (cancelled) return;
 
       const seq = new Tone.Sequence(
@@ -199,8 +205,9 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
                 if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "16n", time);
               }
             } else if (seqType === "chord") {
-              if (chords[row]) {
-                const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
+              const r = rows[row] as { note: string; quality?: string; octave?: number };
+              if (r?.note && r.quality) {
+                const voicing = getChordVoicing(r.note, r.quality, r.octave ?? 3);
                 if (useSampler && sampler) {
                   sampler.triggerAttackRelease(voicing, "8n", time);
                 } else {
@@ -267,9 +274,9 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
         if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "8n");
       }
     } else if (seqType === "chord") {
-      const chords = getDiatonicChords(settings.key, settings.scale);
-      if (chords[ri]) {
-        const voicing = getChordVoicing(chords[ri].root, chords[ri].quality, config.sequencer.defaultOctave ?? 3);
+      const r = rows[ri] as { note: string; quality?: string; octave?: number };
+      if (r?.note && r.quality) {
+        const voicing = getChordVoicing(r.note, r.quality, r.octave ?? 3);
         if (samplerRef.current) {
           samplerRef.current.triggerAttackRelease(voicing, "8n");
         } else {
@@ -288,7 +295,6 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
     setIsRendering(true);
     try {
       const dur = (settings.barCount * 4 * 60) / settings.bpm;
-      const chords = seqType === "chord" ? getDiatonicChords(settings.key, settings.scale) : [];
 
       const hasSamples = selectedPreset.samples !== null;
       const useDrumSamples = seqType === "drum" && hasSamples;
@@ -302,10 +308,8 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
         let offlineSampler: Tone.Sampler | null = null;
 
         if (useDrumSamples || useFxSamples) {
-          const labels = seqType === "drum"
-            ? rows.map(r => r.label)
-            : Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`);
-          offlinePlayers = labels.map(label => {
+          const labelKeys = Object.keys(selectedPreset.samples!);
+          offlinePlayers = labelKeys.map(label => {
             const url = selectedPreset.samples![label];
             return new Tone.Player(url).connect(Tone.getDestination());
           });
@@ -346,13 +350,16 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
                 const s = offlineSynths[row];
                 if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "16n", time);
               }
-            } else if (seqType === "chord" && chords[row]) {
-              const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
-              if (useSampler && offlineSampler) {
-                offlineSampler.triggerAttackRelease(voicing, "8n", time);
-              } else {
-                const s = offlineSynths[row];
-                if (s instanceof Tone.PolySynth) s.triggerAttackRelease(voicing, "8n", time);
+            } else if (seqType === "chord") {
+              const r = rows[row] as { note: string; quality?: string; octave?: number };
+              if (r?.note && r.quality) {
+                const voicing = getChordVoicing(r.note, r.quality, r.octave ?? 3);
+                if (useSampler && offlineSampler) {
+                  offlineSampler.triggerAttackRelease(voicing, "8n", time);
+                } else {
+                  const s = offlineSynths[row];
+                  if (s instanceof Tone.PolySynth) s.triggerAttackRelease(voicing, "8n", time);
+                }
               }
             } else if (seqType === "sample-slot" && useFxSamples) {
               const p = offlinePlayers[row];
@@ -425,7 +432,7 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
       )}
 
       {/* Step Sequencer Grid */}
-      <div style={{ width: "100%", overflowY: seqType === "chromatic" ? "auto" : "visible", maxHeight: seqType === "chromatic" ? 400 : "none" }}>
+      <div style={{ width: "100%", overflowY: (seqType === "chromatic" || seqType === "chord") ? "auto" : "visible", maxHeight: (seqType === "chromatic" || seqType === "chord") ? 400 : "none" }}>
         {/* Beat markers */}
         <div style={{ display: "grid", gridTemplateColumns: "56px repeat(16, 1fr)", gap: 2, marginBottom: 4, position: "sticky", top: 0, background: "#141311", zIndex: 1 }}>
           <span />
@@ -452,7 +459,7 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
                 onClick={() => tapRow(ri)}
                 style={{
                   fontSize: 9, textAlign: "right", paddingRight: 8, fontFamily: "var(--fm)", color: rowColor,
-                  lineHeight: seqType === "chromatic" ? "24px" : "32px",
+                  lineHeight: (seqType === "chromatic" || seqType === "chord") ? "24px" : "32px",
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   cursor: "pointer", opacity: labelOpacity,
                 }}
@@ -462,7 +469,7 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
               {Array.from({ length: STEPS }).map((_, si) => {
                 const on = grid[ri]?.[si];
                 const cur = currentStep === si;
-                const cellH = seqType === "chromatic" ? 24 : 32;
+                const cellH = (seqType === "chromatic" || seqType === "chord") ? 24 : 32;
                 return (
                   <button key={si} onClick={() => toggleStep(ri, si)} style={{
                     height: cellH, borderRadius: 3, cursor: "pointer", border: "none", width: "100%",
@@ -484,18 +491,6 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
           );
         })}
       </div>
-
-      {/* Sample slot add button */}
-      {seqType === "sample-slot" && (
-        <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <p style={{ color: "#5E584E", fontSize: 13, fontFamily: "var(--fm)", marginBottom: 12 }}>
-            Use Generate mode to create sounds, then sequence them here
-          </p>
-          <p style={{ color: "#5E584E", fontSize: 11, fontFamily: "var(--fm)" }}>
-            Sample slot sequencer — coming soon
-          </p>
-        </div>
-      )}
 
       <CommitBar
         settings={settings}

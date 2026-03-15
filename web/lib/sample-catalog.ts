@@ -223,15 +223,21 @@ export const CHORDS_PRESETS: SamplerPreset[] = [
 
 // ── FX pad presets ──
 
+function fxLabel(file: string): string {
+  // "stabs/Stab Brass Blast.wav" -> "Brass Blast"
+  // "hits/Riser Whoosh Up.wav" -> "Whoosh Up"
+  const base = file.split("/").pop()!.replace(/\.wav$/, "");
+  return base.replace(/^(Stab|FX|Impact|Riser|Sweep|Swell|Blip) ?/, "").trim() || base;
+}
+
 function fxKit(
   id: string,
   name: string,
   files: string[]
 ): SampleKit {
-  const labels = ["Pad 1", "Pad 2", "Pad 3", "Pad 4", "Pad 5", "Pad 6", "Pad 7", "Pad 8"];
   const samples: Record<string, string> = {};
-  files.forEach((file, i) => {
-    samples[labels[i]] = enc(`fx/one-shots/${file}`);
+  files.forEach((file) => {
+    samples[fxLabel(file)] = enc(`fx/one-shots/${file}`);
   });
   return { id, name, samples };
 }

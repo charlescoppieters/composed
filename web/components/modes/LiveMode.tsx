@@ -87,10 +87,8 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
         setKitLoading(true);
         drumSynthsRef.current = [];
         samplerRef.current = null;
-        const labels = stemType === "fx"
-          ? Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`)
-          : DRUM_PADS.map(p => p.label);
-        const players = labels.map(label => {
+        const labelKeys = Object.keys(selectedPreset.samples!);
+        const players = labelKeys.map(label => {
           const url = selectedPreset.samples![label];
           return new Tone.Player(url).connect(localDestination);
         });
@@ -308,6 +306,51 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
     setActiveNotes(prev => { const n = new Set(prev); n.delete(note); return n; });
   }, []);
 
+  // QWERTY keyboard → piano note mapping
+  const keyToNote = useCallback((key: string): string | null => {
+    // Lower octave (current octave)
+    const lower: Record<string, string> = {
+      z: "C", s: "C#", x: "D", d: "D#", c: "E", v: "F",
+      g: "F#", b: "G", h: "G#", n: "A", j: "A#", m: "B",
+    };
+    // Upper octave (current octave + 1)
+    const upper: Record<string, string> = {
+      q: "C", "2": "C#", w: "D", "3": "D#", e: "E", r: "F",
+      "5": "F#", t: "G", "6": "G#", y: "A", "7": "A#", u: "B",
+    };
+    const k = key.toLowerCase();
+    if (lower[k]) return `${lower[k]}${octave}`;
+    if (upper[k]) return `${upper[k]}${octave + 1}`;
+    return null;
+  }, [octave]);
+
+  // Keyboard event listeners
+  useEffect(() => {
+    if (inputType !== "keyboard") return;
+    const pressed = new Set<string>();
+
+    const onDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const note = keyToNote(e.key);
+      if (!note || pressed.has(e.key)) return;
+      pressed.add(e.key);
+      playNote(note);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      const note = keyToNote(e.key);
+      if (!note || !pressed.has(e.key)) return;
+      pressed.delete(e.key);
+      stopNote(note);
+    };
+
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, [inputType, keyToNote, playNote, stopNote]);
+
   // Commit
   const commit = async () => {
     if (!recordedBlob) return;
@@ -337,8 +380,8 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
   };
 
   // Build piano keyboard
-  const scaleNotes = buildScale(settings.key, settings.scale, octave, 2);
-  const allKeys = buildKeyboard(octave, 2);
+  const scaleNotes = buildScale(settings.key, settings.scale, octave, 3);
+  const allKeys = buildKeyboard(octave, 3);
   const whiteKeys = allKeys.filter(k => !k.isBlack);
 
   return (
@@ -419,8 +462,8 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
       {/* Input area */}
       {inputType === "pads" && (recordState === "idle" || recordState === "recording") && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-          {(stemType === "fx" && selectedPreset.samples
-            ? Array.from({ length: 8 }, (_, i) => ({ label: `Pad ${i + 1}` }))
+          {(selectedPreset.samples
+            ? Object.keys(selectedPreset.samples).map(label => ({ label }))
             : DRUM_PADS
           ).map((pad, i) => (
             <button key={i} onClick={() => triggerPad(i)} style={{
