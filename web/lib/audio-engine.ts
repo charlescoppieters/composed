@@ -16,6 +16,8 @@ class AudioEngine {
   private _initialized = false;
   private clockStartTime = 0;
   private clockOffset = 0;
+  private soloFilter: Tone.Filter | null = null;
+  private soloSynth: Tone.MonoSynth | null = null;
 
   private ensureGains() {
     if (!this.masterGain) {
@@ -209,6 +211,50 @@ class AudioEngine {
     }
   }
 
+  engageSoloMode() {
+    this.ensureGains();
+    if (this.soloFilter) return;
+    this.soloFilter = new Tone.Filter({ frequency: 20000, type: "lowpass", rolloff: -24 });
+    // Disconnect masterGain from destination and route through filter
+    this.masterGain!.disconnect();
+    this.masterGain!.connect(this.soloFilter);
+    this.soloFilter.toDestination();
+    this.soloFilter.frequency.rampTo(800, 0.5);
+  }
+
+  disengageSoloMode() {
+    if (!this.soloFilter) return;
+    this.soloFilter.frequency.rampTo(20000, 0.3);
+    const filter = this.soloFilter;
+    this.soloFilter = null;
+    setTimeout(() => {
+      this.masterGain?.disconnect();
+      filter.dispose();
+      this.masterGain?.toDestination();
+    }, 350);
+  }
+
+  getSoloSynth(): Tone.MonoSynth {
+    if (!this.soloSynth) {
+      this.ensureGains();
+      this.soloSynth = new Tone.MonoSynth({
+        oscillator: { type: "sawtooth" },
+        filter: { Q: 2, type: "lowpass", frequency: 2000 },
+        envelope: { attack: 0.05, decay: 0.3, sustain: 0.8, release: 0.3 },
+        filterEnvelope: { attack: 0.06, decay: 0.2, sustain: 0.5, release: 0.2, baseFrequency: 300, octaves: 4 },
+      });
+      this.soloSynth.connect(this.localGain!);
+    }
+    return this.soloSynth;
+  }
+
+  disposeSoloSynth() {
+    if (this.soloSynth) {
+      this.soloSynth.dispose();
+      this.soloSynth = null;
+    }
+  }
+
   dispose() {
     Tone.getTransport().stop();
     this.masterPlayers.forEach((tp) => {
@@ -217,6 +263,8 @@ class AudioEngine {
     });
     this.masterPlayers.clear();
     this.clearLocalTrack();
+    this.disengageSoloMode();
+    this.disposeSoloSynth();
     this.masterGain?.dispose();
     this.localGain?.dispose();
   }

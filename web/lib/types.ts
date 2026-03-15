@@ -30,6 +30,15 @@ export interface Track {
   pushedAt: number;       // timestamp
 }
 
+export interface SoloRequest {
+  soloist: string;          // userId
+  soloistName: string;      // display name
+  status: "pending" | "active" | "ending";
+  accepts: string[];        // userIds who accepted
+  xVotes: string[];         // userIds who gave X during solo
+  applause: string[];       // userIds currently applauding
+}
+
 export interface Room {
   code: string;
   settings: RoomSettings;
@@ -38,6 +47,7 @@ export interface Room {
   users: RoomUser[];
   createdAt: number;
   clockStartTime: number;  // shared epoch for transport sync
+  solo: SoloRequest | null;
 }
 
 export type InstrumentMode = "generate" | "sequence" | "live";
@@ -71,6 +81,13 @@ export interface ServerToClientEvents {
   "track:vote-updated": (trackId: string, votes: string[]) => void;
   "queue:updated": (queue: Track[]) => void;
   "transport:sync": (position: number) => void;
+  "solo:requested": (solo: SoloRequest) => void;
+  "solo:updated": (solo: SoloRequest) => void;
+  "solo:started": (solo: SoloRequest) => void;
+  "solo:ending": (solo: SoloRequest) => void;
+  "solo:ended": () => void;
+  "solo:remote-note-on": (note: string) => void;
+  "solo:remote-note-off": (note: string) => void;
 }
 
 export interface ClientToServerEvents {
@@ -82,4 +99,11 @@ export interface ClientToServerEvents {
   "track:vote-up": (trackId: string) => void;
   "track:dequeue": (trackId: string, cb: (track: Track | null) => void) => void;
   "clock:ping": (clientTime: number, cb: (serverTime: number) => void) => void;
+  "solo:request": () => void;
+  "solo:accept": () => void;
+  "solo:deny": () => void;
+  "solo:applause": () => void;
+  "solo:x-vote": () => void;
+  "solo:note-on": (note: string) => void;
+  "solo:note-off": (note: string) => void;
 }

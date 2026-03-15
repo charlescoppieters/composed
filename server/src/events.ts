@@ -4,6 +4,7 @@ import {
   ServerToClientEvents,
   RoomUser,
   Track,
+  SoloRequest,
 } from "../../shared/types";
 import * as RoomManager from "./room-manager";
 import { v4 as uuid } from "uuid";
@@ -133,9 +134,116 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
       cb(Date.now());
     });
 
+    // ─── Solo handlers ───
+
+    socket.on("solo:request", () => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      const room = RoomManager.getRoom(meta.code);
+      if (!room) return;
+      const user = room.users.find((u) => u.id === meta.userId);
+      if (!user) return;
+      const solo = RoomManager.requestSolo(meta.code, meta.userId, user.name);
+      if (!solo) return;
+
+      if (room.users.length <= 1) {
+        // Auto-start for solo user
+        const boundary = RoomManager.getNextBarBoundaryMs(meta.code);
+        const delay = Math.max(0, (boundary ?? 0) - Date.now());
+        setTimeout(() => {
+          const started = RoomManager.startSolo(meta.code);
+          if (started) io.to(meta.code).emit("solo:started", started);
+        }, delay);
+      }
+      io.to(meta.code).emit("solo:requested", solo);
+    });
+
+    socket.on("solo:accept", () => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      const result = RoomManager.acceptSolo(meta.code, meta.userId);
+      if (!result) return;
+      io.to(meta.code).emit("solo:updated", result.solo);
+      if (result.allAccepted) {
+        const boundary = RoomManager.getNextBarBoundaryMs(meta.code);
+        const delay = Math.max(0, (boundary ?? 0) - Date.now());
+        setTimeout(() => {
+          const started = RoomManager.startSolo(meta.code);
+          if (started) io.to(meta.code).emit("solo:started", started);
+        }, delay);
+      }
+    });
+
+    socket.on("solo:deny", () => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      RoomManager.denySolo(meta.code);
+      io.to(meta.code).emit("solo:ended");
+    });
+
+    socket.on("solo:applause", () => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      const solo = RoomManager.soloApplause(meta.code, meta.userId);
+      if (solo) io.to(meta.code).emit("solo:updated", solo);
+    });
+
+    socket.on("solo:x-vote", () => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      const result = RoomManager.soloXVote(meta.code, meta.userId);
+      if (!result) return;
+      if (result.allXd) {
+        const room = RoomManager.getRoom(meta.code);
+        if (room && room.solo) room.solo.status = "ending";
+        io.to(meta.code).emit("solo:ending", result.solo);
+        const boundary = RoomManager.getNextBarBoundaryMs(meta.code);
+        const delay = Math.max(0, (boundary ?? 0) - Date.now());
+        setTimeout(() => {
+          RoomManager.endSolo(meta.code);
+          io.to(meta.code).emit("solo:ended");
+        }, delay);
+      } else {
+        io.to(meta.code).emit("solo:updated", result.solo);
+      }
+    });
+
+    socket.on("solo:note-on", (note) => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      socket.to(meta.code).emit("solo:remote-note-on", note);
+    });
+
+    socket.on("solo:note-off", (note) => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) return;
+      socket.to(meta.code).emit("solo:remote-note-off", note);
+    });
+
     socket.on("disconnect", () => {
       const meta = socketRooms.get(socket.id);
       if (meta) {
+        // If soloist disconnects, end solo immediately
+        const room = RoomManager.getRoom(meta.code);
+        if (room?.solo) {
+          if (room.solo.soloist === meta.userId) {
+            RoomManager.endSolo(meta.code);
+            socket.to(meta.code).emit("solo:ended");
+          } else if (room.solo.status === "pending") {
+            // Re-check acceptance threshold when a voter leaves
+            const othersCount = room.users.filter(
+              (u) => u.id !== room.solo!.soloist && u.id !== meta.userId
+            ).length;
+            if (othersCount > 0 && room.solo.accepts.filter((id) => id !== meta.userId).length >= othersCount) {
+              const boundary = RoomManager.getNextBarBoundaryMs(meta.code);
+              const delay = Math.max(0, (boundary ?? 0) - Date.now());
+              setTimeout(() => {
+                const started = RoomManager.startSolo(meta.code);
+                if (started) io.to(meta.code).emit("solo:started", started);
+              }, delay);
+            }
+          }
+        }
         RoomManager.removeUser(meta.code, meta.userId);
         socket.to(meta.code).emit("room:user-left", meta.userId);
         socketRooms.delete(socket.id);

@@ -12,6 +12,8 @@ import ModeNav from "./ModeNav";
 import InstrumentWorkspace from "./InstrumentWorkspace";
 import SampleBrowser from "./SampleBrowser";
 import AudienceMode, { FAKE_AUDIENCE_USERS } from "./AudienceMode";
+import SoloOverlay from "./SoloOverlay";
+import { useSolo } from "@/hooks/useSolo";
 
 const CHATBOT_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || "http://localhost:8000";
 
@@ -80,6 +82,7 @@ function ResizeHandle({ side, onDrag }: { side: "left" | "right"; onDrag: (dx: n
 /* ─── Main Component ─── */
 export default function JamSession({ roomCode }: { roomCode: string }) {
   const { room, userId, trackQueue, createRoom, joinRoom, updateSettings, pushTrack, voteDown, voteUp, dequeueOwnTrack } = useRoom();
+  const { solo, isSoloist, isPending, isActive, isEnding, requestSolo, acceptSolo, denySolo, sendApplause, sendX } = useSolo(room, userId);
   const joinedRef = useRef(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
@@ -244,20 +247,60 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             </span>
             <span style={{ fontFamily: "var(--fm)", fontSize: 12, color: "#5E584E" }}>{room.settings.barCount} bars</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => isPlaying ? pause() : play()} style={{
-                width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid",
-                background: isPlaying ? "rgba(207,162,75,0.15)" : "rgba(123,158,132,0.12)",
-                borderColor: isPlaying ? "rgba(207,162,75,0.30)" : "rgba(123,158,132,0.20)",
-                fontSize: 14, color: isPlaying ? "#CFA24B" : "#7B9E84", transition: "all 0.15s",
-              }}>{isPlaying ? "⏸" : "▶"}</button>
-              <button onClick={stop} style={{
-                width: 38, height: 38, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                background: "rgba(232,226,217,0.03)", border: "1px solid rgba(232,226,217,0.06)",
-                fontSize: 12, color: "#5E584E", transition: "all 0.15s",
-              }}>⏹</button>
+              {!solo && (
+                <button onClick={requestSolo} style={{
+                  padding: "0 14px", height: 38, borderRadius: 10, fontSize: 12, fontWeight: 600,
+                  cursor: "pointer", fontFamily: "var(--fm)",
+                  background: "rgba(207,162,75,0.10)", border: "1px solid rgba(207,162,75,0.25)",
+                  color: "#CFA24B", transition: "all 0.15s", letterSpacing: 0.5,
+                }}>
+                  🎷 Solo
+                </button>
+              )}
             </div>
           </div>
         </header>
+
+        {/* ═══ SOLO PENDING BANNER ═══ */}
+        {solo && isPending && !isSoloist && (
+          <div style={{
+            padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
+            background: "rgba(207,162,75,0.08)", borderBottom: "1px solid rgba(207,162,75,0.15)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>🎷</span>
+              <span style={{ fontFamily: "var(--fm)", fontSize: 13, color: "#CFA24B" }}>
+                <b>{solo.soloistName}</b> has requested a solo
+              </span>
+              <span style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E", marginLeft: 8 }}>
+                {solo.accepts.length}/{room.users.length - 1} accepted
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={acceptSolo} style={{
+                padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: "rgba(123,158,132,0.15)", border: "1px solid rgba(123,158,132,0.3)",
+                color: "#7B9E84", transition: "all 0.15s",
+              }}>Accept</button>
+              <button onClick={denySolo} style={{
+                padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: "rgba(196,107,90,0.15)", border: "1px solid rgba(196,107,90,0.3)",
+                color: "#C46B5A", transition: "all 0.15s",
+              }}>Deny</button>
+            </div>
+          </div>
+        )}
+        {solo && isPending && isSoloist && (
+          <div style={{
+            padding: "10px 20px", display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(207,162,75,0.08)", borderBottom: "1px solid rgba(207,162,75,0.15)",
+          }}>
+            <span style={{ fontSize: 16 }}>🎷</span>
+            <span style={{ fontFamily: "var(--fm)", fontSize: 13, color: "#CFA24B" }}>
+              Waiting for approval... {solo.accepts.length}/{room.users.length - 1} accepted
+            </span>
+          </div>
+        )}
 
         {/* ═══ 3-COLUMN BODY ═══ */}
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
@@ -475,6 +518,18 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             </div>
           </aside>
         </div>
+
+        {/* Solo overlay */}
+        {solo && (isActive || isEnding) && (
+          <SoloOverlay
+            solo={solo}
+            isSoloist={isSoloist}
+            users={room.users}
+            userId={userId ?? ""}
+            onApplause={sendApplause}
+            onX={sendX}
+          />
+        )}
 
         {/* Sample browser overlay */}
         {showSamples && (

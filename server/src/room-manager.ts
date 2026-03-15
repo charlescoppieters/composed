@@ -1,4 +1,4 @@
-import { Room, RoomSettings, RoomUser, Track } from "../../shared/types";
+import { Room, RoomSettings, RoomUser, Track, SoloRequest } from "../../shared/types";
 import { v4 as uuid } from "uuid";
 
 const rooms = new Map<string, Room>();
@@ -23,6 +23,7 @@ export function createRoom(settings: RoomSettings): Room {
     users: [],
     createdAt: now,
     clockStartTime: now,
+    solo: null,
   };
   rooms.set(room.code, room);
   return room;
@@ -150,4 +151,78 @@ export function voteUpTrack(code: string, trackId: string, userId: string): Trac
     track.downVotes = [];
   }
   return track;
+}
+
+// ─── Solo ───
+
+export function requestSolo(code: string, userId: string, userName: string): SoloRequest | undefined {
+  const room = rooms.get(code);
+  if (!room || room.solo) return undefined;
+  const solo: SoloRequest = {
+    soloist: userId,
+    soloistName: userName,
+    status: "pending",
+    accepts: [],
+    xVotes: [],
+    applause: [],
+  };
+  room.solo = solo;
+  return solo;
+}
+
+export function acceptSolo(code: string, userId: string): { solo: SoloRequest; allAccepted: boolean } | undefined {
+  const room = rooms.get(code);
+  if (!room || !room.solo || room.solo.status !== "pending") return undefined;
+  if (!room.solo.accepts.includes(userId)) {
+    room.solo.accepts.push(userId);
+  }
+  const othersCount = room.users.filter((u) => u.id !== room.solo!.soloist).length;
+  return { solo: room.solo, allAccepted: room.solo.accepts.length >= othersCount };
+}
+
+export function denySolo(code: string): void {
+  const room = rooms.get(code);
+  if (room) room.solo = null;
+}
+
+export function startSolo(code: string): SoloRequest | undefined {
+  const room = rooms.get(code);
+  if (!room || !room.solo) return undefined;
+  room.solo.status = "active";
+  return room.solo;
+}
+
+export function soloXVote(code: string, userId: string): { solo: SoloRequest; allXd: boolean } | undefined {
+  const room = rooms.get(code);
+  if (!room || !room.solo || room.solo.status !== "active") return undefined;
+  if (!room.solo.xVotes.includes(userId) && userId !== room.solo.soloist) {
+    room.solo.xVotes.push(userId);
+  }
+  const othersCount = room.users.filter((u) => u.id !== room.solo!.soloist).length;
+  return { solo: room.solo, allXd: room.solo.xVotes.length >= othersCount };
+}
+
+export function soloApplause(code: string, userId: string): SoloRequest | undefined {
+  const room = rooms.get(code);
+  if (!room || !room.solo || room.solo.status !== "active") return undefined;
+  const idx = room.solo.applause.indexOf(userId);
+  if (idx === -1) {
+    room.solo.applause.push(userId);
+  } else {
+    room.solo.applause.splice(idx, 1);
+  }
+  return room.solo;
+}
+
+export function endSolo(code: string): void {
+  const room = rooms.get(code);
+  if (room) room.solo = null;
+}
+
+export function getNextBarBoundaryMs(code: string): number | undefined {
+  const room = rooms.get(code);
+  if (!room) return undefined;
+  const barDurationMs = (4 * 60 * 1000) / room.settings.bpm;
+  const elapsed = Date.now() - room.clockStartTime;
+  return room.clockStartTime + (Math.floor(elapsed / barDurationMs) + 1) * barDurationMs;
 }
