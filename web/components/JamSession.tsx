@@ -4,10 +4,12 @@ import { useRoom } from "@/hooks/useRoom";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import { ListenMode } from "@/lib/audio-engine";
 import { DEFAULT_SETTINGS, STEM_COLORS, getUserColor } from "@/lib/constants";
-import { Track, RoomUser } from "@/lib/types";
+import { Track, RoomUser, StemType, InstrumentMode } from "@/lib/types";
+import { INSTRUMENT_CONFIGS } from "@/lib/instrument-config";
 import TrackList from "./TrackList";
-import CreationPanel from "./CreationPanel";
-import PianoKeys from "./PianoKeys";
+import InstrumentNav from "./InstrumentNav";
+import ModeNav from "./ModeNav";
+import InstrumentWorkspace from "./InstrumentWorkspace";
 import SampleBrowser from "./SampleBrowser";
 import AudienceMode, { FAKE_AUDIENCE_USERS } from "./AudienceMode";
 
@@ -103,11 +105,32 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
 
   const { listenMode, setListenMode, isPlaying, play, pause, stop, setTrackVolume, previewLocal, clearLocal, getLocalDestination } = useAudioEngine(room, room?.tracks ?? []);
   const [localDest, setLocalDest] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"pads" | "keys" | "samples" | "ai" | "audience">("pads");
+  const [activeInstrument, setActiveInstrument] = useState<StemType>(() => {
+    if (typeof window !== "undefined") {
+      return (sessionStorage.getItem("composed-instrument") as StemType) || "drums";
+    }
+    return "drums";
+  });
+  const [activeMode, setActiveMode] = useState<InstrumentMode>(() => {
+    if (typeof window !== "undefined") {
+      return (sessionStorage.getItem("composed-mode") as InstrumentMode) || "sequence";
+    }
+    return "sequence";
+  });
+  const [showSamples, setShowSamples] = useState(false);
+  const [showAudience, setShowAudience] = useState(false);
   const [loadedTrack, setLoadedTrack] = useState<Track | null>(null);
   const [leftW, setLeftW] = useState(240);
   const [rightW, setRightW] = useState(220);
   const [mutedTracks, setMutedTracks] = useState<Set<string>>(new Set());
+
+  // Persist instrument/mode to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("composed-instrument", activeInstrument);
+  }, [activeInstrument]);
+  useEffect(() => {
+    sessionStorage.setItem("composed-mode", activeMode);
+  }, [activeMode]);
 
   const toggleMute = useCallback((trackId: string) => {
     setMutedTracks(prev => {
@@ -179,6 +202,7 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
 
   const currentUser = room.users.find(u => u.id === userId);
   const currentUserIndex = room.users.findIndex(u => u.id === userId);
+  const instrumentConfig = INSTRUMENT_CONFIGS[activeInstrument];
 
   return (
     <div style={{ height: "100vh", background: "#0D0C0A", display: "flex", alignItems: "stretch", justifyContent: "center" }}>
@@ -283,6 +307,26 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
                   : `${room.tracks.length} stem${room.tracks.length > 1 ? "s" : ""} in the master. Try adding ${room.tracks.some(t => t.stemType === "bass") ? "melody" : "bass"}.`}
               </p>
             </div>
+
+            {/* Sidebar buttons */}
+            <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+              <button onClick={() => setShowSamples(!showSamples)} style={{
+                flex: 1, padding: "8px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                background: showSamples ? "rgba(207,162,75,0.15)" : "rgba(232,226,217,0.03)",
+                border: `1px solid ${showSamples ? "rgba(207,162,75,0.30)" : "rgba(232,226,217,0.06)"}`,
+                color: showSamples ? "#CFA24B" : "#5E584E", transition: "all 0.15s",
+              }}>
+                Samples
+              </button>
+              <button onClick={() => setShowAudience(!showAudience)} style={{
+                flex: 1, padding: "8px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                background: showAudience ? "rgba(123,158,132,0.15)" : "rgba(232,226,217,0.03)",
+                border: `1px solid ${showAudience ? "rgba(123,158,132,0.30)" : "rgba(232,226,217,0.06)"}`,
+                color: showAudience ? "#7B9E84" : "#5E584E", transition: "all 0.15s",
+              }}>
+                Audience
+              </button>
+            </div>
           </aside>
 
           <ResizeHandle side="left" onDrag={onLeftDrag} />
@@ -291,45 +335,39 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
           <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
 
             {/* Deck */}
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(232,226,217,0.06)", background: "rgba(0,0,0,0.10)" }}>
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(232,226,217,0.06)", background: "rgba(0,0,0,0.10)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   {currentUser && <Avatar user={currentUser} index={currentUserIndex} size={32} />}
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 18, color: "#E8E2D9", letterSpacing: -0.3 }}>Your Workspace</div>
-                    <div style={{ fontFamily: "var(--fm)", fontSize: 12, color: "#5E584E", marginTop: 3 }}>{currentUser?.name} · drums · creating</div>
+                    <div style={{ fontFamily: "var(--fm)", fontSize: 12, color: instrumentConfig.color, marginTop: 3 }}>
+                      {currentUser?.name} · <span style={{ color: instrumentConfig.color }}>{instrumentConfig.label}</span> · {activeMode === "generate" ? "generating" : activeMode === "sequence" ? "sequencing" : "performing"}
+                    </div>
                   </div>
                 </div>
-                <div style={{ fontFamily: "var(--fm)" }}>
-                  <span style={{ fontSize: 28, color: "#CFA24B", letterSpacing: -1, fontWeight: 500 }}>{room.settings.bpm.toFixed(2)}</span>
-                  <span style={{ fontSize: 11, color: "#5E584E", marginLeft: 6 }}>BPM</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {/* Listen mode */}
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {LISTEN_MODES.map((mode) => {
+                      const active = listenMode === mode.value;
+                      return (
+                        <button key={mode.value} onClick={() => setListenMode(mode.value)} style={{
+                          padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          background: active ? "rgba(207,162,75,0.15)" : "rgba(232,226,217,0.03)",
+                          border: `1px solid ${active ? "rgba(207,162,75,0.30)" : "rgba(232,226,217,0.06)"}`,
+                          color: active ? "#CFA24B" : "#5E584E", transition: "all 0.15s",
+                        }}>
+                          {mode.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontFamily: "var(--fm)" }}>
+                    <span style={{ fontSize: 24, color: "#CFA24B", letterSpacing: -1, fontWeight: 500 }}>{room.settings.bpm.toFixed(2)}</span>
+                    <span style={{ fontSize: 10, color: "#5E584E", marginLeft: 4 }}>BPM</span>
+                  </div>
                 </div>
-              </div>
-
-              {/* Listen mode + commit */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {LISTEN_MODES.map((mode) => {
-                    const active = listenMode === mode.value;
-                    return (
-                      <button key={mode.value} onClick={() => setListenMode(mode.value)} style={{
-                        padding: "8px 18px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        background: active ? "rgba(207,162,75,0.15)" : "rgba(232,226,217,0.03)",
-                        border: `1px solid ${active ? "rgba(207,162,75,0.30)" : "rgba(232,226,217,0.06)"}`,
-                        color: active ? "#CFA24B" : "#5E584E", transition: "all 0.15s",
-                      }}>
-                        {mode.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button style={{
-                  padding: "8px 24px", borderRadius: 8, background: "#7B9E84", color: "#0D0C0A",
-                  fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                  transition: "all 0.15s",
-                }}>
-                  ⬆ Commit
-                </button>
               </div>
             </div>
 
@@ -343,53 +381,34 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
               </div>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: "flex", borderBottom: "1px solid rgba(232,226,217,0.06)", padding: "0 24px", flexShrink: 0 }}>
-              {(["pads", "keys", "samples", "ai", "audience"] as const).map((tab) => {
-                const active = activeTab === tab;
-                const label = tab === "ai" ? "AI Generate" : tab === "audience" ? "Audience" : tab.charAt(0).toUpperCase() + tab.slice(1);
-                return (
-                  <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                    padding: "14px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", border: "none", background: "transparent",
-                    borderBottom: `2px solid ${active ? "#CFA24B" : "transparent"}`,
-                    color: active ? "#CFA24B" : "#5E584E", transition: "all 0.15s",
-                  }}>
-                    {label}
-                  </button>
-                );
-              })}
+            {/* ═══ INSTRUMENT BAR ═══ */}
+            <div style={{ padding: "12px 0", borderBottom: "1px solid rgba(232,226,217,0.06)" }}>
+              <InstrumentNav active={activeInstrument} onChange={setActiveInstrument} />
             </div>
 
-            {/* Tool area */}
+            {/* ═══ MODE BAR ═══ */}
+            <ModeNav active={activeMode} onChange={setActiveMode} />
+
+            {/* ═══ TOOL AREA ═══ */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", minHeight: 200 }}>
-              {activeTab === "pads" && localDest && (
-                <CreationPanel
-                  settings={room.settings}
-                  userId={userId}
-                  roomCode={room.code}
-                  localDestination={localDest}
-                  loadedTrack={loadedTrack}
-                  onClearTrack={handleClearTrack}
-                  onPush={pushTrack}
-                />
-              )}
-              {activeTab === "keys" && localDest && (
-                <PianoKeys settings={room.settings} localDestination={localDest} />
-              )}
-              {activeTab === "samples" && (
-                <SampleBrowser apiUrl={CHATBOT_API_URL} />
-              )}
-              {activeTab === "ai" && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", width: "100%" }}>
-                  <p style={{ color: "#5E584E", fontSize: 13, fontFamily: "var(--fm)" }}>AI Generate — coming soon</p>
-                </div>
-              )}
-              {activeTab === "audience" && (
+              {showAudience ? (
                 <AudienceMode
                   users={room.users}
                   tracks={room.tracks}
                   bpm={room.settings.bpm}
                   useFakeUsers={room.users.length < 2}
+                />
+              ) : localDest && (
+                <InstrumentWorkspace
+                  settings={room.settings}
+                  stemType={activeInstrument}
+                  mode={activeMode}
+                  userId={userId}
+                  roomCode={room.code}
+                  localDestination={localDest}
+                  onPush={pushTrack}
+                  previewLocal={previewLocal}
+                  clearLocal={clearLocal}
                 />
               )}
             </div>
@@ -405,7 +424,7 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
               {room.users.map((user, i) => {
                 const isMe = user.id === userId;
                 const userTracks = room.tracks.filter(t => t.userId === user.id);
-                const activeStem = userTracks.length > 0 ? userTracks[userTracks.length - 1].stemType : null;
+                const activeStem = isMe ? activeInstrument : (userTracks.length > 0 ? userTracks[userTracks.length - 1].stemType : null);
                 return (
                   <div key={user.id} style={{
                     padding: "12px 14px", borderRadius: 10, display: "flex", alignItems: "center", gap: 10,
@@ -449,6 +468,23 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             </div>
           </aside>
         </div>
+
+        {/* Sample browser overlay */}
+        {showSamples && (
+          <div style={{
+            position: "absolute", bottom: 0, left: 0, right: 0, height: "40%", zIndex: 50,
+            background: "#1A1917", borderTop: "1px solid rgba(232,226,217,0.08)",
+            display: "flex", flexDirection: "column",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px", borderBottom: "1px solid rgba(232,226,217,0.06)" }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "#E8E2D9" }}>Sample Browser</span>
+              <button onClick={() => setShowSamples(false)} style={{ background: "none", border: "none", color: "#5E584E", cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: "0 20px" }}>
+              <SampleBrowser apiUrl={CHATBOT_API_URL} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

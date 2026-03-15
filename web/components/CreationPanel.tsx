@@ -99,6 +99,7 @@ export default function CreationPanel({
       creationLevel: 3,
       volume: 1,
       muted: false,
+      removeVotes: [],
     });
   };
 
@@ -114,6 +115,7 @@ export default function CreationPanel({
       creationLevel: loadedTrack.creationLevel,
       volume: loadedTrack.volume,
       muted: false,
+      removeVotes: [],
     });
     onClearTrack();
   };
