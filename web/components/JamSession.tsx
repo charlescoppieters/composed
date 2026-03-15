@@ -9,6 +9,7 @@ import TrackList from "./TrackList";
 import CreationPanel from "./CreationPanel";
 import PianoKeys from "./PianoKeys";
 import SampleBrowser from "./SampleBrowser";
+import AudienceMode, { FAKE_AUDIENCE_USERS } from "./AudienceMode";
 
 const CHATBOT_API_URL = process.env.NEXT_PUBLIC_CHATBOT_URL || "http://localhost:8000";
 
@@ -76,7 +77,7 @@ function ResizeHandle({ side, onDrag }: { side: "left" | "right"; onDrag: (dx: n
 
 /* ─── Main Component ─── */
 export default function JamSession({ roomCode }: { roomCode: string }) {
-  const { room, userId, trackQueue, createRoom, joinRoom, updateSettings, pushTrack, voteRemove, unvoteRemove } = useRoom();
+  const { room, userId, trackQueue, createRoom, joinRoom, updateSettings, pushTrack, voteDown, voteUp, dequeueOwnTrack } = useRoom();
   const joinedRef = useRef(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
@@ -100,9 +101,10 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
     if (room && roomCode === "NEW") window.history.replaceState(null, "", `/room/${room.code}`);
   }, [room, roomCode]);
 
-  const { listenMode, setListenMode, isPlaying, play, pause, stop, setTrackVolume, getLocalDestination } = useAudioEngine(room, room?.tracks ?? []);
+  const { listenMode, setListenMode, isPlaying, play, pause, stop, setTrackVolume, previewLocal, clearLocal, getLocalDestination } = useAudioEngine(room, room?.tracks ?? []);
   const [localDest, setLocalDest] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<"pads" | "keys" | "samples" | "ai">("pads");
+  const [activeTab, setActiveTab] = useState<"pads" | "keys" | "samples" | "ai" | "audience">("pads");
+  const [loadedTrack, setLoadedTrack] = useState<Track | null>(null);
   const [leftW, setLeftW] = useState(240);
   const [rightW, setRightW] = useState(220);
   const [mutedTracks, setMutedTracks] = useState<Set<string>>(new Set());
@@ -124,6 +126,27 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
   useEffect(() => {
     if (room && !localDest) setLocalDest(getLocalDestination());
   }, [room, localDest, getLocalDestination]);
+
+  // Sync inactive tracks to audio engine mute state
+  useEffect(() => {
+    if (!room) return;
+    room.tracks.forEach((track) => {
+      const shouldBeMuted = !track.active || mutedTracks.has(track.id);
+      setTrackVolume(track.id, shouldBeMuted ? 0 : track.volume);
+    });
+  }, [room?.tracks, mutedTracks, setTrackVolume]);
+
+  const handlePullFromQueue = useCallback(async (trackId: string) => {
+    const track = await dequeueOwnTrack(trackId);
+    if (!track) return;
+    setLoadedTrack(track);
+    previewLocal(track.audioUrl);
+  }, [dequeueOwnTrack, previewLocal]);
+
+  const handleClearTrack = useCallback(() => {
+    setLoadedTrack(null);
+    clearLocal();
+  }, [clearLocal]);
 
   const onLeftDrag = useCallback((dx: number) => {
     setLeftW(w => Math.max(160, Math.min(400, w + dx)));
@@ -222,16 +245,30 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
                 const isOwn = track.userId === userId;
                 return (
                   <div key={track.id} style={{
-                    padding: "14px 16px", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                    padding: "10px 14px", borderRadius: 10, display: "flex", alignItems: "center", gap: 10,
                     background: isOwn ? "rgba(207,162,75,0.12)" : "rgba(232,226,217,0.03)",
                     border: `1px solid ${isOwn ? "rgba(207,162,75,0.25)" : "rgba(232,226,217,0.06)"}`,
                     transition: "all 0.2s",
                   }}>
                     {tu && <Avatar user={tu} index={ti} size={28} />}
-                    <div style={{ minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14, color: "#E8E2D9", lineHeight: 1.3 }}>{track.name}</div>
                       <div style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E", lineHeight: 1.3, marginTop: 2 }}>{track.stemType} · queued</div>
                     </div>
+                    {isOwn && (
+                      <button
+                        onClick={() => handlePullFromQueue(track.id)}
+                        title="Pull back from queue"
+                        style={{
+                          flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10,
+                          fontFamily: "var(--fm)", fontWeight: 600, cursor: "pointer",
+                          background: "rgba(207,162,75,0.10)", border: "1px solid rgba(207,162,75,0.25)",
+                          color: "#CFA24B", transition: "all 0.15s",
+                        }}
+                      >
+                        ↩ Pull
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -297,18 +334,20 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             </div>
 
             {/* Master stems */}
-            <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(232,226,217,0.06)" }}>
+            <div style={{ padding: "16px 24px 0", borderBottom: "1px solid rgba(232,226,217,0.06)", flexShrink: 0 }}>
               <div style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12, fontWeight: 500 }}>
                 Master — {room.tracks.length} merged stem{room.tracks.length !== 1 ? "s" : ""}
               </div>
-              <TrackList tracks={room.tracks} userId={userId} users={room.users} onVoteRemove={voteRemove} onUnvoteRemove={unvoteRemove} onToggleMute={toggleMute} mutedTracks={mutedTracks} totalUsers={room.users.length} />
+              <div style={{ maxHeight: 188, overflowY: "auto", paddingBottom: 16 }}>
+                <TrackList tracks={room.tracks} userId={userId} users={room.users} onVoteDown={voteDown} onVoteUp={voteUp} onToggleMute={toggleMute} mutedTracks={mutedTracks} totalUsers={room.users.length} />
+              </div>
             </div>
 
             {/* Tabs */}
             <div style={{ display: "flex", borderBottom: "1px solid rgba(232,226,217,0.06)", padding: "0 24px", flexShrink: 0 }}>
-              {(["pads", "keys", "samples", "ai"] as const).map((tab) => {
+              {(["pads", "keys", "samples", "ai", "audience"] as const).map((tab) => {
                 const active = activeTab === tab;
-                const label = tab === "ai" ? "AI Generate" : tab.charAt(0).toUpperCase() + tab.slice(1);
+                const label = tab === "ai" ? "AI Generate" : tab === "audience" ? "Audience" : tab.charAt(0).toUpperCase() + tab.slice(1);
                 return (
                   <button key={tab} onClick={() => setActiveTab(tab)} style={{
                     padding: "14px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", border: "none", background: "transparent",
@@ -324,7 +363,15 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
             {/* Tool area */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", minHeight: 200 }}>
               {activeTab === "pads" && localDest && (
-                <CreationPanel settings={room.settings} userId={userId} roomCode={room.code} localDestination={localDest} onPush={pushTrack} />
+                <CreationPanel
+                  settings={room.settings}
+                  userId={userId}
+                  roomCode={room.code}
+                  localDestination={localDest}
+                  loadedTrack={loadedTrack}
+                  onClearTrack={handleClearTrack}
+                  onPush={pushTrack}
+                />
               )}
               {activeTab === "keys" && localDest && (
                 <PianoKeys settings={room.settings} localDestination={localDest} />
@@ -336,6 +383,14 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", width: "100%" }}>
                   <p style={{ color: "#5E584E", fontSize: 13, fontFamily: "var(--fm)" }}>AI Generate — coming soon</p>
                 </div>
+              )}
+              {activeTab === "audience" && (
+                <AudienceMode
+                  users={room.users}
+                  tracks={room.tracks}
+                  bpm={room.settings.bpm}
+                  useFakeUsers={room.users.length < 2}
+                />
               )}
             </div>
           </main>

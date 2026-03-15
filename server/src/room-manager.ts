@@ -83,6 +83,15 @@ export function dequeueTrack(code: string): Track | undefined {
   return track;
 }
 
+export function dequeueTrackByUser(code: string, trackId: string, userId: string): Track | null {
+  const room = rooms.get(code);
+  if (!room) return null;
+  const idx = room.trackQueue.findIndex((t) => t.id === trackId && t.userId === userId);
+  if (idx === -1) return null;
+  const [track] = room.trackQueue.splice(idx, 1);
+  return track;
+}
+
 export function getNextCycleBoundaryMs(code: string): number | undefined {
   const room = rooms.get(code);
   if (!room) return undefined;
@@ -108,33 +117,37 @@ export function clearQueueTimer(code: string): void {
   }
 }
 
-export function removeTrack(code: string, trackId: string): boolean {
-  const room = rooms.get(code);
-  if (!room) return false;
-  room.tracks = room.tracks.filter((t) => t.id !== trackId);
-  return true;
-}
-
-export function voteRemoveTrack(code: string, trackId: string, userId: string): string[] | undefined {
+// Returns updated track, or undefined if track not found
+export function voteDownTrack(code: string, trackId: string, userId: string): Track | undefined {
   const room = rooms.get(code);
   if (!room) return undefined;
   const track = room.tracks.find((t) => t.id === trackId);
-  if (!track) return undefined;
-  if (!track.removeVotes.includes(userId)) {
-    track.removeVotes.push(userId);
+  if (!track || !track.active) return track; // already off, return as-is
+  if (!track.downVotes.includes(userId)) {
+    track.downVotes.push(userId);
+    track.upVotes = track.upVotes.filter((id) => id !== userId); // clear any up-vote
   }
-  if (track.removeVotes.length > room.users.length / 2) {
-    room.tracks = room.tracks.filter((t) => t.id !== trackId);
-    return undefined;
+  if (track.downVotes.length > room.users.length / 2) {
+    track.active = false;
+    track.downVotes = [];
+    track.upVotes = [];
   }
-  return track.removeVotes;
+  return track;
 }
 
-export function unvoteRemoveTrack(code: string, trackId: string, userId: string): string[] | undefined {
+export function voteUpTrack(code: string, trackId: string, userId: string): Track | undefined {
   const room = rooms.get(code);
   if (!room) return undefined;
   const track = room.tracks.find((t) => t.id === trackId);
-  if (!track) return undefined;
-  track.removeVotes = track.removeVotes.filter((id) => id !== userId);
-  return track.removeVotes;
+  if (!track || track.active) return track; // already on, return as-is
+  if (!track.upVotes.includes(userId)) {
+    track.upVotes.push(userId);
+    track.downVotes = track.downVotes.filter((id) => id !== userId);
+  }
+  if (track.upVotes.length > room.users.length / 2) {
+    track.active = true;
+    track.upVotes = [];
+    track.downVotes = [];
+  }
+  return track;
 }

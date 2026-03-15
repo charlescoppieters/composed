@@ -23,7 +23,9 @@ export interface Track {
   creationLevel: 1 | 2 | 3 | 4;
   volume: number;         // 0-1
   muted: boolean;
-  removeVotes: string[];  // userIds who voted to remove
+  active: boolean;        // false = voted off, still in master but muted
+  downVotes: string[];    // userIds who voted to turn off
+  upVotes: string[];      // userIds who voted to turn back on
   pushedAt: number;       // timestamp
 }
 
@@ -61,8 +63,7 @@ export interface ServerToClientEvents {
   "room:user-left": (userId: string) => void;
   "room:settings-changed": (settings: RoomSettings) => void;
   "track:pushed": (track: Track) => void;
-  "track:removed": (trackId: string) => void;
-  "track:vote-updated": (trackId: string, votes: string[]) => void;
+  "track:updated": (track: Track) => void;
   "queue:updated": (queue: Track[]) => void;
   "transport:sync": (position: number) => void;
 }
@@ -71,8 +72,9 @@ export interface ClientToServerEvents {
   "room:create": (userName: string, settings: RoomSettings, cb: (room: Room) => void) => void;
   "room:join": (code: string, userName: string, cb: (room: Room | null) => void) => void;
   "room:update-settings": (settings: Partial<RoomSettings>) => void;
-  "track:push": (track: Omit<Track, "removeVotes" | "pushedAt">) => void;
-  "track:vote-remove": (trackId: string) => void;
-  "track:unvote-remove": (trackId: string) => void;
+  "track:push": (track: Omit<Track, "downVotes" | "upVotes" | "active" | "pushedAt">) => void;
+  "track:vote-down": (trackId: string) => void;
+  "track:vote-up": (trackId: string) => void;
+  "track:dequeue": (trackId: string, cb: (track: Track | null) => void) => void;
   "clock:ping": (clientTime: number, cb: (serverTime: number) => void) => void;
 }
