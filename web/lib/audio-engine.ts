@@ -175,6 +175,15 @@ class AudioEngine {
     if (tp) tp.gain.gain.value = muted ? 0 : 1;
   }
 
+  getTimeUntilNextBoundaryMs(): number {
+    const transport = Tone.getTransport();
+    if (transport.state !== "started") return 0;
+    const loopEnd = transport.toSeconds(transport.loopEnd);
+    if (!loopEnd || loopEnd <= 0) return 0;
+    const pos = transport.seconds % loopEnd;
+    return Math.max(0, (loopEnd - pos) * 1000);
+  }
+
   getLocalDestination(): Tone.Gain {
     this.ensureGains();
     return this.localGain!;

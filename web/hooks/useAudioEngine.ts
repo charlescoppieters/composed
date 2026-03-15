@@ -141,6 +141,10 @@ export function useAudioEngine(room: Room | null, tracks: Track[]) {
     return engineRef.current.getLocalDestination();
   }, []);
 
+  const getTimeUntilNextBoundaryMs = useCallback(() => {
+    return engineRef.current.getTimeUntilNextBoundaryMs();
+  }, []);
+
   return {
     isPlaying,
     listenMode,
@@ -152,5 +156,6 @@ export function useAudioEngine(room: Room | null, tracks: Track[]) {
     clearLocal,
     setTrackVolume,
     getLocalDestination,
+    getTimeUntilNextBoundaryMs,
   };
 }

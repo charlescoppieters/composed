@@ -101,7 +101,7 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
     if (room && roomCode === "NEW") window.history.replaceState(null, "", `/room/${room.code}`);
   }, [room, roomCode]);
 
-  const { listenMode, setListenMode, isPlaying, play, pause, stop, setTrackVolume, previewLocal, clearLocal, getLocalDestination } = useAudioEngine(room, room?.tracks ?? []);
+  const { listenMode, setListenMode, isPlaying, play, pause, stop, setTrackVolume, previewLocal, clearLocal, getLocalDestination, getTimeUntilNextBoundaryMs } = useAudioEngine(room, room?.tracks ?? []);
   const [localDest, setLocalDest] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"pads" | "keys" | "samples" | "ai" | "audience">("pads");
   const [loadedTrack, setLoadedTrack] = useState<Track | null>(null);
@@ -127,14 +127,41 @@ export default function JamSession({ roomCode }: { roomCode: string }) {
     if (room && !localDest) setLocalDest(getLocalDestination());
   }, [room, localDest, getLocalDestination]);
 
-  // Sync inactive tracks to audio engine mute state
+  // Sync track active state to audio engine — delayed to next loop boundary
+  const prevActiveRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    if (!room) return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    room.tracks.forEach((track) => {
+      const prev = prevActiveRef.current.get(track.id);
+      const shouldBeMuted = !track.active || mutedTracks.has(track.id);
+      if (prev === undefined) {
+        // New track — apply immediately
+        setTrackVolume(track.id, shouldBeMuted ? 0 : track.volume);
+      } else if (prev !== track.active) {
+        // Active state changed — schedule at next loop boundary
+        const delay = getTimeUntilNextBoundaryMs();
+        const t = setTimeout(() => {
+          setTrackVolume(track.id, shouldBeMuted ? 0 : track.volume);
+        }, delay);
+        timers.push(t);
+      }
+      prevActiveRef.current.set(track.id, track.active);
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [room?.tracks, setTrackVolume, getTimeUntilNextBoundaryMs]);
+
+  // Manual mute/unmute applies immediately
   useEffect(() => {
     if (!room) return;
     room.tracks.forEach((track) => {
-      const shouldBeMuted = !track.active || mutedTracks.has(track.id);
-      setTrackVolume(track.id, shouldBeMuted ? 0 : track.volume);
+      if (mutedTracks.has(track.id)) {
+        setTrackVolume(track.id, 0);
+      } else if (track.active) {
+        setTrackVolume(track.id, track.volume);
+      }
     });
-  }, [room?.tracks, mutedTracks, setTrackVolume]);
+  }, [mutedTracks, setTrackVolume]);
 
   const handlePullFromQueue = useCallback(async (trackId: string) => {
     const track = await dequeueOwnTrack(trackId);
