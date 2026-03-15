@@ -5,6 +5,7 @@ import { RoomSettings, StemType } from "@/lib/types";
 import { INSTRUMENT_CONFIGS } from "@/lib/instrument-config";
 import { bufferToWav } from "@/lib/audio-utils";
 import { buildScale, buildKeyboard } from "@/lib/music-utils";
+import { DRUM_KITS, BASS_PRESETS, MELODY_PRESETS, CHORDS_PRESETS, FX_KITS, SampleKit, SamplerPreset } from "@/lib/sample-catalog";
 import CommitBar from "@/components/CommitBar";
 import WaveformPreview from "@/components/WaveformPreview";
 
@@ -42,6 +43,20 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
   const [micError, setMicError] = useState<string | null>(null);
   const [octave, setOctave] = useState(config.sequencer.defaultOctave ?? 3);
   const [activeNotes, setActiveNotes] = useState<Set<string>>(new Set());
+  const presets: (SampleKit | SamplerPreset)[] = (() => {
+    if (inputType === "pads" && stemType === "drums") return DRUM_KITS;
+    if (inputType === "pads" && stemType === "fx") return FX_KITS;
+    if (inputType === "keyboard" && stemType === "bass") return BASS_PRESETS;
+    if (inputType === "keyboard" && stemType === "melody") return MELODY_PRESETS;
+    if (inputType === "keyboard" && stemType === "chords") return CHORDS_PRESETS;
+    return [];
+  })();
+  const defaultPreset: SampleKit = { id: "synth", name: "Synth", samples: null };
+  const [_selectedPreset, setSelectedPreset] = useState<SampleKit | SamplerPreset>(presets[0] ?? defaultPreset);
+  const selectedPreset = presets.find(p => p.id === _selectedPreset.id) ?? presets[0] ?? defaultPreset;
+  const [kitLoading, setKitLoading] = useState(false);
+  const samplePlayersRef = useRef<Tone.Player[]>([]);
+  const samplerRef = useRef<Tone.Sampler | null>(null);
 
   const recorderRef = useRef<Tone.Recorder | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -61,12 +76,31 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
   const recordStartRef = useRef<number>(0);
   const progressRafRef = useRef<number>(0);
 
-  // Create synths for pads/keyboard modes
+  // Create synths/players/samplers for pads/keyboard modes
   useEffect(() => {
     if (inputType === "microphone") return;
+    let cancelled = false;
 
     if (inputType === "pads") {
-      // Create drum synths
+      if (selectedPreset.samples) {
+        // Sample kit mode (drums or FX pads)
+        setKitLoading(true);
+        drumSynthsRef.current = [];
+        samplerRef.current = null;
+        const labels = stemType === "fx"
+          ? Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`)
+          : DRUM_PADS.map(p => p.label);
+        const players = labels.map(label => {
+          const url = selectedPreset.samples![label];
+          return new Tone.Player(url).connect(localDestination);
+        });
+        samplePlayersRef.current = players;
+        Tone.loaded().then(() => { if (!cancelled) setKitLoading(false); });
+        return () => { cancelled = true; players.forEach(p => p.dispose()); };
+      }
+      // Synth kit mode
+      samplePlayersRef.current = [];
+      samplerRef.current = null;
       const synths = DRUM_PADS.map((_, i) => {
         switch (i) {
           case 0: return new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.4 } }).connect(localDestination);
@@ -83,7 +117,20 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
       return () => { synths.forEach(s => s.dispose()); };
     }
 
-    // Keyboard synth
+    // Keyboard mode
+    if (selectedPreset.samples) {
+      // Sampler preset
+      setKitLoading(true);
+      synthRef.current = null;
+      const sampler = new Tone.Sampler(selectedPreset.samples).connect(localDestination);
+      sampler.volume.value = -6;
+      samplerRef.current = sampler;
+      Tone.loaded().then(() => { if (!cancelled) setKitLoading(false); });
+      return () => { cancelled = true; sampler.dispose(); };
+    }
+
+    // Default synth
+    samplerRef.current = null;
     const synth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "triangle" },
       envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.8 },
@@ -91,7 +138,7 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
     synth.volume.value = -6;
     synthRef.current = synth;
     return () => { synth.dispose(); };
-  }, [localDestination, inputType]);
+  }, [localDestination, inputType, selectedPreset, stemType]);
 
   // Progress animation during recording
   const startProgressTracking = useCallback(() => {
@@ -220,9 +267,14 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
     }
   }, [inputType, localDestination, stopProgressTracking]);
 
-  // Trigger drum pad
+  // Trigger drum/fx pad
   const triggerPad = async (index: number) => {
     await Tone.start();
+    if (selectedPreset.samples) {
+      const player = samplePlayersRef.current[index];
+      if (player?.loaded) { player.stop(); player.start(); }
+      return;
+    }
     const synth = drumSynthsRef.current[index];
     if (!synth) return;
     const t = Tone.now();
@@ -239,12 +291,20 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
   // Piano key handlers
   const playNote = useCallback(async (note: string) => {
     await Tone.start();
-    synthRef.current?.triggerAttack(note);
+    if (samplerRef.current) {
+      samplerRef.current.triggerAttack(note);
+    } else {
+      synthRef.current?.triggerAttack(note);
+    }
     setActiveNotes(prev => new Set(prev).add(note));
   }, []);
 
   const stopNote = useCallback((note: string) => {
-    synthRef.current?.triggerRelease(note);
+    if (samplerRef.current) {
+      samplerRef.current.triggerRelease(note);
+    } else {
+      synthRef.current?.triggerRelease(note);
+    }
     setActiveNotes(prev => { const n = new Set(prev); n.delete(note); return n; });
   }, []);
 
@@ -334,10 +394,35 @@ export default function LiveMode({ settings, stemType, roomCode, localDestinatio
         </div>
       )}
 
+      {/* Preset selector (for pads and keyboard) */}
+      {presets.length > 1 && (recordState === "idle" || recordState === "recording") && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E" }}>
+            {inputType === "pads" ? "Kit" : "Sound"}
+          </span>
+          {presets.map(p => (
+            <button key={p.id} onClick={() => setSelectedPreset(p)} style={{
+              padding: "4px 10px", borderRadius: 6, fontFamily: "var(--fm)", fontSize: 11, cursor: "pointer",
+              background: selectedPreset.id === p.id ? `${config.color}25` : "transparent",
+              border: `1px solid ${selectedPreset.id === p.id ? `${config.color}50` : "rgba(232,226,217,0.06)"}`,
+              color: selectedPreset.id === p.id ? config.color : "#5E584E",
+            }}>
+              {p.name}
+            </button>
+          ))}
+          {kitLoading && (
+            <span style={{ fontFamily: "var(--fm)", fontSize: 10, color: "#5E584E", marginLeft: 4 }}>Loading...</span>
+          )}
+        </div>
+      )}
+
       {/* Input area */}
       {inputType === "pads" && (recordState === "idle" || recordState === "recording") && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-          {DRUM_PADS.map((pad, i) => (
+          {(stemType === "fx" && selectedPreset.samples
+            ? Array.from({ length: 8 }, (_, i) => ({ label: `Pad ${i + 1}` }))
+            : DRUM_PADS
+          ).map((pad, i) => (
             <button key={i} onClick={() => triggerPad(i)} style={{
               height: 72, borderRadius: 12, fontWeight: 600, fontSize: 12, cursor: "pointer",
               background: `${config.color}15`, border: `1px solid ${config.color}30`, color: config.color,

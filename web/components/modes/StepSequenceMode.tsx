@@ -5,6 +5,7 @@ import { RoomSettings, StemType } from "@/lib/types";
 import { InstrumentConfig, INSTRUMENT_CONFIGS } from "@/lib/instrument-config";
 import { bufferToWav } from "@/lib/audio-utils";
 import { NOTES_IN_OCTAVE, buildScale, getDiatonicChords, getChordVoicing } from "@/lib/music-utils";
+import { DRUM_KITS, BASS_PRESETS, MELODY_PRESETS, CHORDS_PRESETS, FX_KITS, SampleKit, SamplerPreset } from "@/lib/sample-catalog";
 import CommitBar from "@/components/CommitBar";
 
 interface Props {
@@ -64,8 +65,22 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
   const config = INSTRUMENT_CONFIGS[stemType];
   const seqType = config.sequencer.type;
 
-  // Octave state for chromatic
-  const [octave, setOctave] = useState(config.sequencer.defaultOctave ?? 3);
+  // Preset/kit selector state
+  const presets: (SampleKit | SamplerPreset)[] = (() => {
+    if (seqType === "drum") return DRUM_KITS;
+    if (seqType === "chromatic" && stemType === "bass") return BASS_PRESETS;
+    if (seqType === "chromatic" && stemType === "melody") return MELODY_PRESETS;
+    if (seqType === "chord") return CHORDS_PRESETS;
+    if (seqType === "sample-slot" && stemType === "fx") return FX_KITS;
+    return [];
+  })();
+  const defaultPreset: SampleKit = { id: "synth", name: "Synth", samples: null };
+  const [_selectedPreset, setSelectedPreset] = useState<SampleKit | SamplerPreset>(presets[0] ?? defaultPreset);
+  const selectedPreset = presets.find(p => p.id === _selectedPreset.id) ?? presets[0] ?? defaultPreset;
+  const [kitLoading, setKitLoading] = useState(false);
+  const samplePlayersRef = useRef<Tone.Player[]>([]);
+  const samplerRef = useRef<Tone.Sampler | null>(null);
+
   const octaveRange = config.sequencer.octaveRange ?? [2, 5];
 
   // Build rows based on sequencer type
@@ -74,8 +89,7 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
       return config.sequencer.rows.map(r => ({ label: r.label, note: r.label, color: r.color }));
     }
     if (seqType === "chromatic") {
-      // Show 2 octaves at a time
-      return buildChromaticRows(octave, octave + 1).map(r => ({ label: r.label, note: r.note, color: config.color }));
+      return buildChromaticRows(octaveRange[0], octaveRange[1]).map(r => ({ label: r.label, note: r.note, color: config.color }));
     }
     if (seqType === "chord") {
       const chords = getDiatonicChords(settings.key, settings.scale);
@@ -90,6 +104,7 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
   const [isRendering, setIsRendering] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const synthsRef = useRef<Tone.ToneAudioNode[]>([]);
+  const seqRef = useRef<Tone.Sequence | null>(null);
   const gridRef = useRef(grid);
   gridRef.current = grid;
 
@@ -104,66 +119,126 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
   // Scale highlighting for chromatic
   const scaleNotes = buildScale(settings.key, settings.scale, octaveRange[0], octaveRange[1] - octaveRange[0] + 1);
 
-  // Create synths and sequencer
+  // Create synths/players/samplers and sequencer
   useEffect(() => {
     let synths: Tone.ToneAudioNode[] = [];
+    let players: Tone.Player[] = [];
+    let sampler: Tone.Sampler | null = null;
+    const hasSamples = selectedPreset.samples !== null;
+    const useDrumSamples = seqType === "drum" && hasSamples;
+    const useSampler = (seqType === "chromatic" || seqType === "chord") && hasSamples;
+    const useFxSamples = seqType === "sample-slot" && hasSamples;
+    let cancelled = false;
 
-    if (seqType === "drum") {
-      synths = rows.map((_, i) => createDrumSynth(i, localDestination));
-    } else if (seqType === "chromatic") {
-      synths = rows.map(() => {
-        return new Tone.Synth({
-          oscillator: { type: "sawtooth" },
-          envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.3 },
-        }).connect(localDestination);
-      });
-    } else if (seqType === "chord") {
-      synths = rows.map(() => {
-        return new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: "triangle" },
-          envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.5 },
-        }).connect(localDestination);
-      });
-    }
-    // sample-slot synths are managed separately via sampleSlots
-
-    synthsRef.current = synths;
-
-    const chords = seqType === "chord" ? getDiatonicChords(settings.key, settings.scale) : [];
-
-    const seq = new Tone.Sequence(
-      (time, step) => {
-        const g = gridRef.current;
-        for (let row = 0; row < g.length; row++) {
-          if (!g[row][step % STEPS]) continue;
-
-          if (seqType === "drum") {
-            triggerDrumSynth(synths[row], row, time);
-          } else if (seqType === "chromatic") {
-            const s = synths[row];
-            if (s instanceof Tone.Synth) {
-              const note = rows[row]?.note;
-              if (note) s.triggerAttackRelease(note, "16n", time);
-            }
-          } else if (seqType === "chord") {
-            const s = synths[row];
-            if (s instanceof Tone.PolySynth && chords[row]) {
-              const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
-              s.triggerAttackRelease(voicing, "8n", time);
-            }
-          } else if (seqType === "sample-slot") {
-            sampleSlots[row]?.player?.start(time);
-          }
+    const setup = async () => {
+      if (useDrumSamples || useFxSamples) {
+        setKitLoading(true);
+        const labelKey = seqType === "drum"
+          ? rows.map(r => r.label)
+          : Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`);
+        players = labelKey.map(label => {
+          const url = selectedPreset.samples![label];
+          return new Tone.Player(url).connect(localDestination);
+        });
+        samplePlayersRef.current = players;
+        await Tone.loaded();
+        if (cancelled) return;
+        setKitLoading(false);
+      } else if (useSampler) {
+        setKitLoading(true);
+        sampler = new Tone.Sampler(selectedPreset.samples!).connect(localDestination);
+        samplerRef.current = sampler;
+        samplePlayersRef.current = [];
+        await Tone.loaded();
+        if (cancelled) return;
+        setKitLoading(false);
+      } else {
+        samplePlayersRef.current = [];
+        samplerRef.current = null;
+        if (seqType === "drum") {
+          synths = rows.map((_, i) => createDrumSynth(i, localDestination));
+        } else if (seqType === "chromatic") {
+          synths = rows.map(() => new Tone.Synth({
+            oscillator: { type: "sawtooth" },
+            envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.3 },
+          }).connect(localDestination));
+        } else if (seqType === "chord") {
+          synths = rows.map(() => new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "triangle" },
+            envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 0.5 },
+          }).connect(localDestination));
         }
-        Tone.getDraw().schedule(() => setCurrentStep(step % STEPS), time);
-      },
-      Array.from({ length: STEPS }, (_, i) => i), "16n"
-    );
-    seq.loop = true;
-    seq.start(0);
+      }
 
-    return () => { seq.stop(); seq.dispose(); synths.forEach(s => s.dispose()); };
-  }, [localDestination, seqType, stemType, octave, settings.key, settings.scale]);
+      synthsRef.current = synths;
+
+      const chords = seqType === "chord" ? getDiatonicChords(settings.key, settings.scale) : [];
+
+      if (cancelled) return;
+
+      const seq = new Tone.Sequence(
+        (time, step) => {
+          const g = gridRef.current;
+          for (let row = 0; row < g.length; row++) {
+            if (!g[row][step % STEPS]) continue;
+
+            if (seqType === "drum") {
+              if (useDrumSamples) {
+                const player = players[row];
+                if (player?.loaded) { player.stop(time); player.start(time); }
+              } else {
+                triggerDrumSynth(synths[row], row, time);
+              }
+            } else if (seqType === "chromatic") {
+              const note = rows[row]?.note;
+              if (!note) continue;
+              if (useSampler && sampler) {
+                sampler.triggerAttackRelease(note, "16n", time);
+              } else {
+                const s = synths[row];
+                if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "16n", time);
+              }
+            } else if (seqType === "chord") {
+              if (chords[row]) {
+                const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
+                if (useSampler && sampler) {
+                  sampler.triggerAttackRelease(voicing, "8n", time);
+                } else {
+                  const s = synths[row];
+                  if (s instanceof Tone.PolySynth) s.triggerAttackRelease(voicing, "8n", time);
+                }
+              }
+            } else if (seqType === "sample-slot") {
+              if (useFxSamples) {
+                const player = players[row];
+                if (player?.loaded) { player.stop(time); player.start(time); }
+              } else {
+                sampleSlots[row]?.player?.start(time);
+              }
+            }
+          }
+          Tone.getDraw().schedule(() => setCurrentStep(step % STEPS), time);
+        },
+        Array.from({ length: STEPS }, (_, i) => i), "16n"
+      );
+      seq.loop = true;
+      seq.start(0);
+
+      seqRef.current = seq;
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      seqRef.current?.stop();
+      seqRef.current?.dispose();
+      seqRef.current = null;
+      synths.forEach(s => s.dispose());
+      players.forEach(p => p.dispose());
+      sampler?.dispose();
+    };
+  }, [localDestination, seqType, stemType, settings.key, settings.scale, selectedPreset]);
 
   const toggleStep = (ri: number, si: number) => {
     setGrid(prev => { const n = prev.map(r => [...r]); n[ri][si] = !n[ri][si]; return n; });
@@ -172,21 +247,39 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
   const clearGrid = () => setGrid(Array(rowCount).fill(null).map(() => Array(STEPS).fill(false)));
   const hasSteps = grid.some(r => r.some(Boolean));
 
-  // Tap-trigger for drum pads
+  // Tap-trigger for drum pads / rows
   const tapRow = async (ri: number) => {
     await Tone.start();
     if (seqType === "drum") {
-      triggerDrumSynth(synthsRef.current[ri], ri);
-    } else if (seqType === "chromatic") {
-      const s = synthsRef.current[ri];
-      if (s instanceof Tone.Synth) s.triggerAttackRelease(rows[ri].note, "8n");
-    } else if (seqType === "chord") {
-      const s = synthsRef.current[ri];
-      const chords = getDiatonicChords(settings.key, settings.scale);
-      if (s instanceof Tone.PolySynth && chords[ri]) {
-        const voicing = getChordVoicing(chords[ri].root, chords[ri].quality, config.sequencer.defaultOctave ?? 3);
-        s.triggerAttackRelease(voicing, "8n");
+      if (selectedPreset.samples) {
+        const player = samplePlayersRef.current[ri];
+        if (player?.loaded) { player.stop(); player.start(); }
+      } else {
+        triggerDrumSynth(synthsRef.current[ri], ri);
       }
+    } else if (seqType === "chromatic") {
+      const note = rows[ri]?.note;
+      if (!note) return;
+      if (samplerRef.current) {
+        samplerRef.current.triggerAttackRelease(note, "8n");
+      } else {
+        const s = synthsRef.current[ri];
+        if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "8n");
+      }
+    } else if (seqType === "chord") {
+      const chords = getDiatonicChords(settings.key, settings.scale);
+      if (chords[ri]) {
+        const voicing = getChordVoicing(chords[ri].root, chords[ri].quality, config.sequencer.defaultOctave ?? 3);
+        if (samplerRef.current) {
+          samplerRef.current.triggerAttackRelease(voicing, "8n");
+        } else {
+          const s = synthsRef.current[ri];
+          if (s instanceof Tone.PolySynth) s.triggerAttackRelease(voicing, "8n");
+        }
+      }
+    } else if (seqType === "sample-slot" && selectedPreset.samples) {
+      const player = samplePlayersRef.current[ri];
+      if (player?.loaded) { player.stop(); player.start(); }
     }
   };
 
@@ -197,11 +290,30 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
       const dur = (settings.barCount * 4 * 60) / settings.bpm;
       const chords = seqType === "chord" ? getDiatonicChords(settings.key, settings.scale) : [];
 
-      const buffer = await Tone.Offline(({ transport }) => {
+      const hasSamples = selectedPreset.samples !== null;
+      const useDrumSamples = seqType === "drum" && hasSamples;
+      const useSampler = (seqType === "chromatic" || seqType === "chord") && hasSamples;
+      const useFxSamples = seqType === "sample-slot" && hasSamples;
+
+      const buffer = await Tone.Offline(async ({ transport }) => {
         transport.bpm.value = settings.bpm;
         let offlineSynths: Tone.ToneAudioNode[] = [];
+        let offlinePlayers: Tone.Player[] = [];
+        let offlineSampler: Tone.Sampler | null = null;
 
-        if (seqType === "drum") {
+        if (useDrumSamples || useFxSamples) {
+          const labels = seqType === "drum"
+            ? rows.map(r => r.label)
+            : Array.from({ length: 8 }, (_, i) => `Pad ${i + 1}`);
+          offlinePlayers = labels.map(label => {
+            const url = selectedPreset.samples![label];
+            return new Tone.Player(url).connect(Tone.getDestination());
+          });
+          await Tone.loaded();
+        } else if (useSampler) {
+          offlineSampler = new Tone.Sampler(selectedPreset.samples!).connect(Tone.getDestination());
+          await Tone.loaded();
+        } else if (seqType === "drum") {
           offlineSynths = rows.map((_, i) => createDrumSynth(i, Tone.getDestination()));
         } else if (seqType === "chromatic") {
           offlineSynths = rows.map(() => new Tone.Synth({
@@ -219,16 +331,32 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
           for (let row = 0; row < grid.length; row++) {
             if (!grid[row][step % STEPS]) continue;
             if (seqType === "drum") {
-              triggerDrumSynth(offlineSynths[row], row, time);
-            } else if (seqType === "chromatic") {
-              const s = offlineSynths[row];
-              if (s instanceof Tone.Synth) s.triggerAttackRelease(rows[row].note, "16n", time);
-            } else if (seqType === "chord" && chords[row]) {
-              const s = offlineSynths[row];
-              if (s instanceof Tone.PolySynth) {
-                const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
-                s.triggerAttackRelease(voicing, "8n", time);
+              if (useDrumSamples) {
+                const p = offlinePlayers[row];
+                if (p?.loaded) { p.stop(time); p.start(time); }
+              } else {
+                triggerDrumSynth(offlineSynths[row], row, time);
               }
+            } else if (seqType === "chromatic") {
+              const note = rows[row]?.note;
+              if (!note) continue;
+              if (useSampler && offlineSampler) {
+                offlineSampler.triggerAttackRelease(note, "16n", time);
+              } else {
+                const s = offlineSynths[row];
+                if (s instanceof Tone.Synth) s.triggerAttackRelease(note, "16n", time);
+              }
+            } else if (seqType === "chord" && chords[row]) {
+              const voicing = getChordVoicing(chords[row].root, chords[row].quality, config.sequencer.defaultOctave ?? 3);
+              if (useSampler && offlineSampler) {
+                offlineSampler.triggerAttackRelease(voicing, "8n", time);
+              } else {
+                const s = offlineSynths[row];
+                if (s instanceof Tone.PolySynth) s.triggerAttackRelease(voicing, "8n", time);
+              }
+            } else if (seqType === "sample-slot" && useFxSamples) {
+              const p = offlinePlayers[row];
+              if (p?.loaded) { p.stop(time); p.start(time); }
             }
           }
         }, Array.from({ length: STEPS }, (_, i) => i), "16n");
@@ -247,14 +375,34 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
       clearGrid();
     } catch (err) { console.error("Render failed:", err); }
     finally { setIsRendering(false); }
-  }, [grid, settings, roomCode, stemType, seqType, rows, config, onPush]);
+  }, [grid, settings, roomCode, stemType, seqType, rows, config, onPush, selectedPreset]);
 
-  // Visible rows (limit for chromatic to viewport with scroll)
-  const maxVisibleRows = seqType === "chromatic" ? 24 : rows.length;
-  const visibleRows = rows.slice(0, maxVisibleRows);
+  const visibleRows = rows;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "100%" }}>
+
+      {/* Preset selector */}
+      {presets.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E" }}>
+            {seqType === "drum" ? "Kit" : "Sound"}
+          </span>
+          {presets.map(p => (
+            <button key={p.id} onClick={() => setSelectedPreset(p)} style={{
+              padding: "4px 10px", borderRadius: 6, fontFamily: "var(--fm)", fontSize: 11, cursor: "pointer",
+              background: selectedPreset.id === p.id ? `${config.color}25` : "transparent",
+              border: `1px solid ${selectedPreset.id === p.id ? `${config.color}50` : "rgba(232,226,217,0.06)"}`,
+              color: selectedPreset.id === p.id ? config.color : "#5E584E",
+            }}>
+              {p.name}
+            </button>
+          ))}
+          {kitLoading && (
+            <span style={{ fontFamily: "var(--fm)", fontSize: 10, color: "#5E584E", marginLeft: 4 }}>Loading...</span>
+          )}
+        </div>
+      )}
 
       {/* Drum pads (only for drum type) */}
       {seqType === "drum" && (
@@ -273,27 +421,6 @@ export default function StepSequenceMode({ settings, stemType, roomCode, localDe
               {row.label}
             </button>
           ))}
-        </div>
-      )}
-
-      {/* Octave selector for chromatic */}
-      {seqType === "chromatic" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E" }}>Octave</span>
-          {Array.from({ length: octaveRange[1] - octaveRange[0] + 1 }, (_, i) => octaveRange[0] + i).map(o => (
-            <button key={o} onClick={() => setOctave(o)} style={{
-              padding: "4px 10px", borderRadius: 6, fontFamily: "var(--fm)", fontSize: 11, cursor: "pointer",
-              background: octave === o ? `${config.color}25` : "transparent",
-              border: `1px solid ${octave === o ? `${config.color}50` : "rgba(232,226,217,0.06)"}`,
-              color: octave === o ? config.color : "#5E584E",
-            }}>
-              {o}
-            </button>
-          ))}
-          <div style={{ flex: 1 }} />
-          <span style={{ fontFamily: "var(--fm)", fontSize: 11, color: "#5E584E" }}>
-            {settings.key} {settings.scale}
-          </span>
         </div>
       )}
 
