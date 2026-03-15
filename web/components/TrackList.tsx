@@ -6,15 +6,15 @@ interface Props {
   tracks: Track[];
   userId: string | null;
   users: RoomUser[];
-  onVoteRemove: (trackId: string) => void;
-  onUnvoteRemove: (trackId: string) => void;
+  onVoteDown: (trackId: string) => void;
+  onVoteUp: (trackId: string) => void;
   onToggleMute?: (trackId: string) => void;
   mutedTracks?: Set<string>;
   totalUsers: number;
 }
 
 export default function TrackList({
-  tracks, userId, users, onVoteRemove, onUnvoteRemove, onToggleMute, mutedTracks, totalUsers,
+  tracks, userId, users, onVoteDown, onVoteUp, onToggleMute, mutedTracks, totalUsers,
 }: Props) {
   if (tracks.length === 0) {
     return (
@@ -32,8 +32,8 @@ export default function TrackList({
           track={track}
           userId={userId}
           users={users}
-          onVoteRemove={onVoteRemove}
-          onUnvoteRemove={onUnvoteRemove}
+          onVoteDown={onVoteDown}
+          onVoteUp={onVoteUp}
           onToggleMute={onToggleMute}
           isMuted={mutedTracks?.has(track.id)}
           totalUsers={totalUsers}

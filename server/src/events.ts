@@ -89,7 +89,9 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
       if (!meta) return;
       const track: Track = {
         ...trackData,
-        removeVotes: [],
+        active: true,
+        downVotes: [],
+        upVotes: [],
         pushedAt: Date.now(),
       };
       RoomManager.enqueueTrack(meta.code, track);
@@ -102,24 +104,29 @@ export function registerEvents(io: Server<ClientToServerEvents, ServerToClientEv
       }
     });
 
-    socket.on("track:vote-remove", (trackId) => {
+    socket.on("track:vote-down", (trackId) => {
       const meta = socketRooms.get(socket.id);
       if (!meta) return;
-      const result = RoomManager.voteRemoveTrack(meta.code, trackId, meta.userId);
-      if (result === undefined) {
-        io.to(meta.code).emit("track:removed", trackId);
-      } else {
-        io.to(meta.code).emit("track:vote-updated", trackId, result);
-      }
+      const track = RoomManager.voteDownTrack(meta.code, trackId, meta.userId);
+      if (track) io.to(meta.code).emit("track:updated", track);
     });
 
-    socket.on("track:unvote-remove", (trackId) => {
+    socket.on("track:vote-up", (trackId) => {
       const meta = socketRooms.get(socket.id);
       if (!meta) return;
-      const result = RoomManager.unvoteRemoveTrack(meta.code, trackId, meta.userId);
-      if (result) {
-        io.to(meta.code).emit("track:vote-updated", trackId, result);
+      const track = RoomManager.voteUpTrack(meta.code, trackId, meta.userId);
+      if (track) io.to(meta.code).emit("track:updated", track);
+    });
+
+    socket.on("track:dequeue", (trackId, cb) => {
+      const meta = socketRooms.get(socket.id);
+      if (!meta) { cb(null); return; }
+      const track = RoomManager.dequeueTrackByUser(meta.code, trackId, meta.userId);
+      if (track) {
+        const room = RoomManager.getRoom(meta.code);
+        if (room) io.to(meta.code).emit("queue:updated", room.trackQueue);
       }
+      cb(track);
     });
 
     socket.on("clock:ping", (_clientTime, cb) => {

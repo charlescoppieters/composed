@@ -36,10 +36,10 @@ export function useRoom() {
       );
     });
 
-    socket.on("track:removed", (trackId: string) => {
+    socket.on("track:updated", (updated: Track) => {
       setRoom((prev) =>
         prev
-          ? { ...prev, tracks: prev.tracks.filter((t) => t.id !== trackId) }
+          ? { ...prev, tracks: prev.tracks.map((t) => t.id === updated.id ? updated : t) }
           : prev
       );
     });
@@ -48,28 +48,14 @@ export function useRoom() {
       setTrackQueue(queue);
     });
 
-    socket.on("track:vote-updated", (trackId: string, votes: string[]) => {
-      setRoom((prev) =>
-        prev
-          ? {
-              ...prev,
-              tracks: prev.tracks.map((t) =>
-                t.id === trackId ? { ...t, removeVotes: votes } : t
-              ),
-            }
-          : prev
-      );
-    });
-
     return () => {
       socket.off("room:state");
       socket.off("room:user-joined");
       socket.off("room:user-left");
       socket.off("room:settings-changed");
       socket.off("track:pushed");
-      socket.off("track:removed");
+      socket.off("track:updated");
       socket.off("queue:updated");
-      socket.off("track:vote-updated");
     };
   }, [socket]);
 
@@ -110,22 +96,32 @@ export function useRoom() {
   );
 
   const pushTrack = useCallback(
-    (track: Omit<Track, "removeVotes" | "pushedAt">) => {
+    (track: Omit<Track, "downVotes" | "upVotes" | "active" | "pushedAt">) => {
       socket.emit("track:push", track);
     },
     [socket]
   );
 
-  const voteRemove = useCallback(
-    (trackId: string) => {
-      socket.emit("track:vote-remove", trackId);
-    },
+  const voteDown = useCallback(
+    (trackId: string) => { socket.emit("track:vote-down", trackId); },
     [socket]
   );
 
-  const unvoteRemove = useCallback(
-    (trackId: string) => {
-      socket.emit("track:unvote-remove", trackId);
+  const voteUp = useCallback(
+    (trackId: string) => { socket.emit("track:vote-up", trackId); },
+    [socket]
+  );
+
+  const dequeueOwnTrack = useCallback(
+    (trackId: string): Promise<Track | null> => {
+      return new Promise((resolve) => {
+        socket.emit("track:dequeue", trackId, (track) => {
+          if (track) {
+            setTrackQueue((prev) => prev.filter((t) => t.id !== trackId));
+          }
+          resolve(track);
+        });
+      });
     },
     [socket]
   );
@@ -138,7 +134,8 @@ export function useRoom() {
     joinRoom,
     updateSettings,
     pushTrack,
-    voteRemove,
-    unvoteRemove,
+    voteDown,
+    voteUp,
+    dequeueOwnTrack,
   };
 }
