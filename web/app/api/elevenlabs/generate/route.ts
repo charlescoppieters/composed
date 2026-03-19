@@ -34,8 +34,13 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error("ElevenLabs error:", res.status, errorText);
+      const errorType =
+        res.status === 401 ? "auth" :
+        res.status === 402 || (res.status === 403 && /quota|credit|limit/i.test(errorText)) ? "credits" :
+        res.status === 429 ? "rate_limit" :
+        "server";
       return NextResponse.json(
-        { error: `ElevenLabs API error (${res.status})` },
+        { error: `ElevenLabs API error (${res.status})`, errorType },
         { status: res.status }
       );
     }

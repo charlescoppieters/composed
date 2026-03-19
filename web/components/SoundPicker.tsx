@@ -14,18 +14,24 @@ export default function SoundPicker({ isOpen, onClose, onSelect, apiUrl }: Props
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<string | null>(null);
 
   const generateSound = async () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
     setError(null);
+    setErrorType(null);
     try {
       const res = await fetch("/api/elevenlabs/sound", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: prompt.trim(), duration_seconds: 1 }),
       });
-      if (!res.ok) throw new Error("Generation failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setErrorType(data.errorType || null);
+        throw new Error(data.error || "Generation failed");
+      }
       const { audioUrl } = await res.json();
       setGeneratedUrl(audioUrl);
     } catch (err: any) {
@@ -81,7 +87,47 @@ export default function SoundPicker({ isOpen, onClose, onSelect, apiUrl }: Props
             }}>
               {isGenerating ? "Generating..." : "Generate One-Shot"}
             </button>
-            {error && <p style={{ color: "#C46B5A", fontSize: 12 }}>{error}</p>}
+            {error && (
+              <div style={{
+                padding: "12px 14px", borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+                background: errorType === "credits" || errorType === "rate_limit"
+                  ? "rgba(207,162,75,0.06)" : "rgba(196,107,90,0.06)",
+                border: `1px solid ${errorType === "credits" || errorType === "rate_limit"
+                  ? "rgba(207,162,75,0.2)" : "rgba(196,107,90,0.2)"}`,
+                animation: "spFadeIn 0.2s ease-out",
+              }}>
+                <div style={{
+                  fontWeight: 600, marginBottom: 4,
+                  color: errorType === "credits" || errorType === "rate_limit" ? "#CFA24B" : "#C46B5A",
+                }}>
+                  {errorType === "credits"
+                    ? "⚡ Credits used up"
+                    : errorType === "rate_limit"
+                    ? "⏳ Rate limited"
+                    : "✦ Generation unavailable"}
+                </div>
+                <p style={{ color: "#A09888", margin: 0 }}>
+                  {errorType === "credits"
+                    ? "AI sound generation has reached its limit. Browse the Library tab for existing samples."
+                    : errorType === "rate_limit"
+                    ? "Too many requests. Wait a moment and try again."
+                    : "Something went wrong. Try again or browse the Library tab."}
+                </p>
+                {errorType === "credits" && (
+                  <button
+                    onClick={() => { setTab("library"); setError(null); setErrorType(null); }}
+                    style={{
+                      marginTop: 8, padding: "6px 12px", borderRadius: 6, fontSize: 11,
+                      fontWeight: 600, cursor: "pointer", border: "1px solid rgba(207,162,75,0.3)",
+                      background: "rgba(207,162,75,0.1)", color: "#CFA24B",
+                    }}
+                  >
+                    Browse Library →
+                  </button>
+                )}
+                <style>{`@keyframes spFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+              </div>
+            )}
             {generatedUrl && (
               <button onClick={() => { onSelect(generatedUrl, prompt.trim()); onClose(); }} style={{
                 padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",

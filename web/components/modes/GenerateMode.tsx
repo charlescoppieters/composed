@@ -27,6 +27,7 @@ export default function GenerateMode({ settings, stemType, roomCode, localDestin
   const [committableUrl, setCommittableUrl] = useState<string | null>(null);
   const [stretchInfo, setStretchInfo] = useState<{ ratio: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<string | null>(null);
 
   const targetDuration = (settings.barCount * 4 * 60) / settings.bpm;
 
@@ -56,6 +57,7 @@ export default function GenerateMode({ settings, stemType, roomCode, localDestin
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        setErrorType(data.errorType || null);
         throw new Error(data.error || `Generation failed (${res.status})`);
       }
 
@@ -175,13 +177,50 @@ export default function GenerateMode({ settings, stemType, roomCode, localDestin
         </div>
       </div>
 
-      {/* Error */}
+      {/* Error / Fallback */}
       {error && (
         <div style={{
-          padding: "12px 16px", borderRadius: 10, fontSize: 13,
-          background: "rgba(196,107,90,0.1)", border: "1px solid rgba(196,107,90,0.3)", color: "#C46B5A",
+          padding: "16px 20px", borderRadius: 12, fontSize: 13,
+          background: errorType === "credits" || errorType === "rate_limit"
+            ? "rgba(207,162,75,0.06)" : "rgba(196,107,90,0.06)",
+          border: `1px solid ${errorType === "credits" || errorType === "rate_limit"
+            ? "rgba(207,162,75,0.2)" : "rgba(196,107,90,0.2)"}`,
+          display: "flex", flexDirection: "column", gap: 10,
+          animation: "fadeIn 0.2s ease-out",
         }}>
-          {error}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>
+              {errorType === "credits" ? "⚡" : errorType === "rate_limit" ? "⏳" : "✦"}
+            </span>
+            <span style={{
+              fontWeight: 600,
+              color: errorType === "credits" || errorType === "rate_limit" ? "#CFA24B" : "#C46B5A",
+            }}>
+              {errorType === "credits"
+                ? "AI generation credits used up"
+                : errorType === "rate_limit"
+                ? "Too many requests — cooling down"
+                : "Generation unavailable right now"}
+            </span>
+          </div>
+          <p style={{ color: "#A09888", fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+            {errorType === "credits"
+              ? "The AI sound engine has reached its usage limit. You can still create music using the preset samples and the sampler pads — no generation needed."
+              : errorType === "rate_limit"
+              ? "The AI engine is rate-limited. Wait a moment and try again, or use preset samples in the meantime."
+              : "Something went wrong connecting to the AI engine. Try again in a moment — preset samples are always available."}
+          </p>
+          <button
+            onClick={() => { setError(null); setErrorType(null); }}
+            style={{
+              alignSelf: "flex-start", padding: "6px 14px", borderRadius: 8, fontSize: 11,
+              fontWeight: 600, cursor: "pointer", border: "1px solid rgba(232,226,217,0.08)",
+              background: "rgba(232,226,217,0.04)", color: "#A09888", transition: "all 0.15s",
+            }}
+          >
+            Dismiss
+          </button>
+          <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
         </div>
       )}
 
